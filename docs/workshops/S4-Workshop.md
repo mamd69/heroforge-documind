@@ -117,32 +117,51 @@ If you don't have a Supabase project yet:
 
 **Step 2: Configure Environment Variables (3 mins)**
 
-In your Codespace:
+In your Codespace, copy `env.example` to `.env` and fill in your Supabase credentials:
 
 ```bash
-# Create or update .env file
-cat >> .env << 'EOF'
-SUPABASE_URL=your-project-url-here
-SUPABASE_ANON_KEY=your-anon-key-here
-SUPABASE_SERVICE_KEY=your-service-key-here
-EOF
+# Copy the example environment file
+cp env.example .env
 
-# Make sure .env is in .gitignore
-echo ".env" >> .gitignore
+# Edit .env with your credentials
+# You'll need to get these values from Supabase:
 ```
+
+**Required environment variables** (get from https://supabase.com/):
+
+```bash
+# ============================================
+# REQUIRED: Database (Session 4+)
+# ============================================
+# Get from: https://supabase.com/ Settings -> API Keys --> Legacy anon, service_role API keys
+SUPABASE_URL=https://xxxxx.supabase.co
+SUPABASE_ANON_KEY=eyJxxxxx
+SUPABASE_SERVICE_KEY=eyJxxxxx
+
+# Personal Access Token (Required for MCP)
+# Get from: https://supabase.com/dashboard/account/tokens
+SUPABASE_ACCESS_TOKEN=sbp_xxxxx
+```
+
+⚠️ **IMPORTANT**: The `SUPABASE_ACCESS_TOKEN` is a **Personal Access Token (PAT)**, which is different from the project API keys. You must generate this from your Supabase account settings.
 
 **Step 3: Install Supabase MCP Server (5 mins)**
 
-1. Go to **https://supabase.com/docs/guides/getting-started/mcp**
-2. In **Step 2**, select the Supabase project you just created (`documind-dev`)
-3. Under **Select Client**, choose **Claude Code**
-4. Copy the MCP Server command shown, which will look like:
+We've created a skill that handles the Supabase MCP installation automatically.
 
+**In Claude Code, simply type:**
+```
+Use the supabase mcp installer skill to install supabase mcp
+```
+
+Claude will use the skill to:
+1. ✅ Read your credentials from `.env`
+2. ✅ Install the correct MCP package (`@supabase/mcp-server-supabase`)
+3. ✅ Configure authentication with your Personal Access Token
+4. ✅ Verify the connection
+
+**To verify installation manually:**
 ```bash
-# Install Supabase MCP server (replace your_project_id with your actual project reference)
-claude mcp add --scope project --transport http supabase "https://mcp.supabase.com/mcp?project_ref=your_project_id"
-
-# Verify installation (in terminal)
 claude mcp list
 
 # Or verify in Claude Code by typing: /mcp
@@ -150,14 +169,8 @@ claude mcp list
 
 **Expected output:**
 ```
-MCP servers:
-  supabase (http): https://mcp.supabase.com/mcp?project_ref=your_project_id
+supabase: npx @supabase/mcp-server-supabase - ✓ Connected
 ```
-
-**Command explanation:**
-- `--scope project` scopes the MCP server to your current project
-- `--transport http` tells Claude to communicate via HTTP (cloud-hosted server)
-- The URL includes your unique project reference ID
 
 **Step 4: Test Supabase MCP (2 mins)**
 
@@ -660,7 +673,7 @@ claude mcp list
 **Expected output:**
 ```
 MCP servers:
-  supabase (http): https://mcp.supabase.com/mcp?project_ref=your_project_id
+  supabase: npx @supabase/mcp-server-supabase - ✓ Connected
   documind (stdio): python3 src/documind-mcp/server.py
 ```
 
@@ -1082,18 +1095,18 @@ Your implementation is complete when:
 **Supabase MCP Installation:**
 
 ```bash
-# Step 1: Environment variables
-cat >> .env << 'EOF'
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_ANON_KEY=your-anon-key
-SUPABASE_SERVICE_KEY=your-service-key
-EOF
+# Step 1: Copy env.example to .env and fill in your Supabase credentials
+cp env.example .env
 
-# Step 2: Install MCP server
-# Go to https://supabase.com/docs/guides/getting-started/mcp
-# Select your Supabase project, then select "Claude Code" as client
-# Copy and run the command shown:
-claude mcp add --scope project --transport http supabase "https://mcp.supabase.com/mcp?project_ref=your_project_id"
+# Required values in .env:
+# SUPABASE_URL=https://xxxxx.supabase.co        # From Settings -> API
+# SUPABASE_ANON_KEY=eyJxxxxx                     # From Settings -> API Keys
+# SUPABASE_SERVICE_KEY=eyJxxxxx                  # From Settings -> API Keys
+# SUPABASE_ACCESS_TOKEN=sbp_xxxxx                # From Account Settings -> Access Tokens (PAT)
+
+# Step 2: Install MCP server using the skill
+# In Claude Code, type:
+# "Use the supabase mcp installer skill to install supabase mcp"
 
 # Step 3: Verify
 claude mcp list
