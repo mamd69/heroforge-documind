@@ -47,7 +47,8 @@ heroforge-documind/
 │   └── documind/        # Main DocuMind application code
 ├── tests/               # Test files
 ├── docs/
-│   └── guides/          # Setup and troubleshooting guides
+│   ├── guides/          # Setup and troubleshooting guides
+│   └── workshops/       # Workshop files (S3, S4, and future sessions)
 ├── .env.example         # Template for environment variables
 └── package.json         # Node.js dependencies
 ```
