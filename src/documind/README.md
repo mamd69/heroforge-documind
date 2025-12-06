@@ -27,6 +27,15 @@ Each session adds new functionality:
 - **Session 9**: Memory and learning
 - **Session 10**: Evaluation and quality
 
+## Workshops
+
+Workshop materials are located in `/docs/workshops/`:
+
+- **Session 3** (Advanced Claude Code): `S3-Workshop.md`
+- **Session 4** (MCP and A2A): `S4-Workshop.md`
+
+Future workshops will be posted to the same folder after each lesson.
+
 ## Development
 
 Follow the workshop instructions to build each component step by step.
