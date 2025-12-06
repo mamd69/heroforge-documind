@@ -1,6 +1,6 @@
 # DocuMind - AI-Powered Knowledge Management System
 
-Build an intelligent Q&A system for company documents using Claude, RAG, and agentic engineering.
+Build an intelligent Q&A system for company documents using Claude, RAG, and agentic engineering.  Documind is an accompanying sample app to master the concepts you learn in the HeroForge AI-Powered Software Development Course.
 
 ## What is DocuMind?
 
