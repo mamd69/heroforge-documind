@@ -336,6 +336,7 @@ git push
 git push -u origin your-branch-name
 ```
 
+Pro-tip: The best thing about Claude Code is you don't need to be an expert in Git (or anything for that matter).  Just ask it what to do. Or tell it what to do in natural language.  Running git commands from terminal is faster and does not use Claude tokens, but you can always fall back to Claude if needed.
 ---
 
 ### Quiz 1:
@@ -425,14 +426,22 @@ Open `src/documind-mcp/server.py`:
 """
 DocuMind Custom MCP Server
 Provides document management tools for Claude Code
+
+Compatible with MCP SDK v2.x (uses @server.list_tools / @server.call_tool)
 """
 import os
 import json
+import asyncio
 from datetime import datetime
-from typing import Optional
+from dotenv import load_dotenv
 from mcp.server import Server
+from mcp.server.stdio import stdio_server
 from mcp.types import Tool, TextContent
+
 import httpx
+
+# Load environment variables
+load_dotenv()
 
 # Initialize MCP server
 server = Server("documind-mcp")
@@ -440,6 +449,7 @@ server = Server("documind-mcp")
 # Supabase configuration
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
+
 
 def get_supabase_client():
     """Get configured Supabase HTTP client"""
@@ -453,29 +463,136 @@ def get_supabase_client():
         }
     )
 
-@server.tool()
-def upload_document(
-    title: str,
-    content: str,
-    file_type: str = "txt",
-    metadata: Optional[dict] = None
-) -> dict:
-    """
-    Upload a document to the DocuMind knowledge base.
 
-    Args:
-        title: Document title
-        content: Full document content
-        file_type: Type of document (txt, pdf, docx, etc.)
-        metadata: Optional metadata dictionary
+# ============================================================
+# Tool Definitions - Tell Claude what tools are available
+# ============================================================
 
-    Returns:
-        Dictionary with document ID and upload status
-    """
+@server.list_tools()
+async def list_tools() -> list[Tool]:
+    """Return list of available tools"""
+    return [
+        Tool(
+            name="upload_document",
+            description="Upload a document to the DocuMind knowledge base",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "Document title"
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "Full document content"
+                    },
+                    "file_type": {
+                        "type": "string",
+                        "description": "Type of document (txt, pdf, docx, etc.)",
+                        "default": "txt"
+                    },
+                    "metadata": {
+                        "type": "object",
+                        "description": "Optional metadata dictionary"
+                    }
+                },
+                "required": ["title", "content"]
+            }
+        ),
+        Tool(
+            name="search_documents",
+            description="Search documents by title or content",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search query string"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of results",
+                        "default": 5
+                    },
+                    "file_type": {
+                        "type": "string",
+                        "description": "Optional filter by file type"
+                    }
+                },
+                "required": ["query"]
+            }
+        ),
+        Tool(
+            name="get_document",
+            description="Retrieve a specific document by ID",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "document_id": {
+                        "type": "string",
+                        "description": "UUID of the document"
+                    }
+                },
+                "required": ["document_id"]
+            }
+        ),
+        Tool(
+            name="delete_document",
+            description="Delete a document from the knowledge base",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "document_id": {
+                        "type": "string",
+                        "description": "UUID of the document to delete"
+                    }
+                },
+                "required": ["document_id"]
+            }
+        )
+    ]
+
+
+# ============================================================
+# Tool Implementations - Handle tool calls from Claude
+# ============================================================
+
+@server.call_tool()
+async def call_tool(name: str, arguments: dict) -> list[TextContent]:
+    """Handle tool calls"""
+
+    if name == "upload_document":
+        result = upload_document(
+            title=arguments["title"],
+            content=arguments["content"],
+            file_type=arguments.get("file_type", "txt"),
+            metadata=arguments.get("metadata")
+        )
+    elif name == "search_documents":
+        result = search_documents(
+            query=arguments["query"],
+            limit=arguments.get("limit", 5),
+            file_type=arguments.get("file_type")
+        )
+    elif name == "get_document":
+        result = get_document(document_id=arguments["document_id"])
+    elif name == "delete_document":
+        result = delete_document(document_id=arguments["document_id"])
+    else:
+        result = {"error": f"Unknown tool: {name}"}
+
+    return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+
+# ============================================================
+# Tool Logic Functions
+# ============================================================
+
+def upload_document(title: str, content: str, file_type: str = "txt", metadata: dict = None) -> dict:
+    """Upload a document to the DocuMind knowledge base."""
     try:
         client = get_supabase_client()
 
-        # Prepare document data
         document = {
             "title": title,
             "content": content,
@@ -485,7 +602,6 @@ def upload_document(
             "updated_at": datetime.now().isoformat()
         }
 
-        # Insert into database
         response = client.post("/documents", json=document)
         response.raise_for_status()
 
@@ -498,40 +614,19 @@ def upload_document(
             "title": title,
             "message": f"Document '{title}' uploaded successfully"
         }
-
     except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-            "message": "Failed to upload document"
-        }
+        return {"success": False, "error": str(e), "message": "Failed to upload document"}
 
-@server.tool()
-def search_documents(
-    query: str,
-    limit: int = 5,
-    file_type: Optional[str] = None
-) -> dict:
-    """
-    Search documents by title or content.
 
-    Args:
-        query: Search query string
-        limit: Maximum number of results
-        file_type: Optional filter by file type
-
-    Returns:
-        Dictionary with matching documents
-    """
+def search_documents(query: str, limit: int = 5, file_type: str = None) -> dict:
+    """Search documents by title or content."""
     try:
         client = get_supabase_client()
 
-        # Build search query
         search_filter = f"or=(title.ilike.*{query}*,content.ilike.*{query}*)"
         if file_type:
             search_filter += f",file_type.eq.{file_type}"
 
-        # Query database
         response = client.get(
             f"/documents?{search_filter}&limit={limit}&order=created_at.desc"
         )
@@ -553,25 +648,12 @@ def search_documents(
                 for doc in documents
             ]
         }
-
     except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-            "message": "Search failed"
-        }
+        return {"success": False, "error": str(e), "message": "Search failed"}
 
-@server.tool()
+
 def get_document(document_id: str) -> dict:
-    """
-    Retrieve a specific document by ID.
-
-    Args:
-        document_id: UUID of the document
-
-    Returns:
-        Dictionary with full document data
-    """
+    """Retrieve a specific document by ID."""
     try:
         client = get_supabase_client()
 
@@ -581,10 +663,7 @@ def get_document(document_id: str) -> dict:
         documents = response.json()
 
         if not documents:
-            return {
-                "success": False,
-                "message": "Document not found"
-            }
+            return {"success": False, "message": "Document not found"}
 
         document = documents[0]
 
@@ -600,64 +679,53 @@ def get_document(document_id: str) -> dict:
                 "updated_at": document["updated_at"]
             }
         }
-
     except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-            "message": "Failed to retrieve document"
-        }
+        return {"success": False, "error": str(e), "message": "Failed to retrieve document"}
 
-@server.tool()
+
 def delete_document(document_id: str) -> dict:
-    """
-    Delete a document from the knowledge base.
-
-    Args:
-        document_id: UUID of the document to delete
-
-    Returns:
-        Dictionary with deletion status
-    """
+    """Delete a document from the knowledge base."""
     try:
         client = get_supabase_client()
 
         response = client.delete(f"/documents?id=eq.{document_id}")
         response.raise_for_status()
 
-        return {
-            "success": True,
-            "message": f"Document {document_id} deleted successfully"
-        }
-
+        return {"success": True, "message": f"Document {document_id} deleted successfully"}
     except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-            "message": "Failed to delete document"
-        }
+        return {"success": False, "error": str(e), "message": "Failed to delete document"}
 
-# Start server
+
+# ============================================================
+# Server Entry Point
+# ============================================================
+
+async def main():
+    """Run the MCP server using stdio transport"""
+    async with stdio_server() as (read_stream, write_stream):
+        await server.run(
+            read_stream,
+            write_stream,
+            server.create_initialization_options()
+        )
+
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(server.run())
+    asyncio.run(main())
 ```
 
 **Step 3: Install MCP Server Dependencies (2 mins)**
 
-```bash
-# Update package.json to include MCP dependencies
-cat >> package.json << 'EOF'
-{
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^0.5.0",
-    "httpx": "^1.0.0"
-  }
-}
-EOF
+Since the MCP server is written in Python, install the Python dependencies:
 
-npm install
+```bash
+# Install Python MCP SDK and HTTP client
+pip install mcp httpx python-dotenv
 ```
+
+This installs:
+- `mcp` - The Python MCP SDK for creating servers
+- `httpx` - HTTP client for Supabase API calls
+- `python-dotenv` - For loading environment variables from `.env`
 
 **Step 4: Register the Custom MCP Server (3 mins)**
 
@@ -713,21 +781,21 @@ Use the documind MCP to get the full document with ID [use the ID from search re
    d) It's optional and doesn't do anything
 
 **Question 2:** Why do we include docstrings in MCP tool functions?\
-   a) The docstrings become the tool descriptions that Claude reads to understand how to use each tool\
-   b) Docstrings are required by Python\
+   a) Docstrings are required by Python\
+   b) The docstrings become the tool descriptions that Claude reads to understand how to use each tool\
    c) They make the code look professional\
    d) They have no impact on MCP functionality
 
 **Question 3:** What's the advantage of using environment variables for Supabase credentials?\
-   a) Security: credentials aren't hardcoded in code and can be managed separately per environment\
+   a) Environment variables make the code shorter\
    b) Environment variables are faster than hardcoded values\
    c) It's required by Supabase\
-   d) Environment variables make the code shorter
+   d) Security: credentials aren't hardcoded in code and can be managed separately per environment
 
 **Answers:**
 1. **a)** `@server.tool()` exposes functions as discoverable, AI-callable tools in the MCP protocol
-2. **a)** Docstrings provide Claude with descriptions of what each tool does and how to use it
-3. **a)** Environment variables keep secrets secure and separate from code, preventing accidental exposure
+2. **b)** Docstrings provide Claude with descriptions of what each tool does and how to use it
+3. **d)** Environment variables keep secrets secure and separate from code, preventing accidental exposure
 
 ---
 
@@ -771,9 +839,9 @@ A2A communication allows multiple AI agents to coordinate their work by sharing 
 
 **Step 1: Create Agent 1 - Document Uploader (5 mins)**
 
-Create `.claude/subagents/doc-uploader.md`:
+Create `.claude/agents/doc-uploader.md`:
 
-```markdown
+````markdown
 ---
 name: Document Uploader
 role: Document Upload Specialist
@@ -821,13 +889,13 @@ Always respond with:
 - Always include at least basic metadata
 - Verify upload success before reporting
 - Log any errors for troubleshooting
-```
+````
 
 **Step 2: Create Agent 2 - Document Verifier (5 mins)**
 
-Create `.claude/subagents/doc-verifier.md`:
+Create `.claude/agents/doc-verifier.md`:
 
-```markdown
+````markdown
 ---
 name: Document Verifier
 role: Quality Assurance Specialist
@@ -877,7 +945,7 @@ You are a quality assurance agent that verifies documents uploaded to DocuMind m
 - Formatting quality: 20 points
 - Metadata accuracy: 15 points
 - Overall coherence: 15 points
-```
+````
 
 **Step 3: Test A2A Workflow (5 mins)**
 
@@ -912,9 +980,9 @@ Show me both agents' outputs.
    d) It's required by MCP
 
 **Question 2:** In the document pipeline example, how do the two agents communicate?\
-   a) Through shared database state—agent 1 writes a document that agent 2 reads using the document ID\
+   a) They don't actually communicate\
    b) They send emails to each other\
-   c) They don't actually communicate\
+   c) Through shared database state—agent 1 writes a document that agent 2 reads using the document ID\
    d) Through a chat interface
 
 **Question 3:** When should you use multi-agent A2A vs a single agent?\
@@ -925,7 +993,7 @@ Show me both agents' outputs.
 
 **Answers:**
 1. **a)** A2A enables specialized agents to collaborate on complex, multi-step tasks through coordination
-2. **a)** They communicate through shared Supabase database—agent 1 writes, agent 2 reads via document ID
+2. **c)** They communicate through shared Supabase database—agent 1 writes, agent 2 reads via document ID
 3. **a)** Use multi-agent for specialized phases or parallel processing; use single agent for simple, linear tasks
 
 ---
@@ -974,28 +1042,96 @@ Create a 3-agent workflow that:
    - Allows updating document metadata
    - Used by Agent 2 to save enriched data
 
+Pro-Tip: Want to understand this better?  Just ask Claude: explain to me how A2A coordination worked inside the database
 ---
 
 ### Starter Code
 
-**Update `src/documind-mcp/server.py`** with new tool:
+**Update `src/documind-mcp/server.py`** to add the `update_document` tool in THREE places:
 
+---
+
+**Step A: Add Tool definition to `list_tools()` function**
+
+Find **line 125** which looks like this:
 ```python
-@server.tool()
-def update_document(
-    document_id: str,
-    metadata: dict
-) -> dict:
-    """
-    Update document metadata (enrichment, tags, summary, etc.)
+                "required": ["document_id"]
+            }
+        )
+    ]
+```
 
-    Args:
-        document_id: UUID of document to update
-        metadata: Dictionary of metadata to merge with existing
+Change it to add the new Tool **before** the closing `]`:
+```python
+                "required": ["document_id"]
+            }
+        ),
+        Tool(
+            name="update_document",
+            description="Update document metadata (enrichment, tags, summary, etc.)",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "document_id": {
+                        "type": "string",
+                        "description": "UUID of document to update"
+                    },
+                    "metadata": {
+                        "type": "object",
+                        "description": "Dictionary of metadata to merge with existing"
+                    }
+                },
+                "required": ["document_id", "metadata"]
+            }
+        )
+    ]
+```
 
-    Returns:
-        Dictionary with update status
-    """
+**Note:** Add a comma `,` after the closing `)` on line 127, then paste the new Tool block.
+
+---
+
+**Step B: Add handler to `call_tool()` function**
+
+Find **line 172-173** which looks like this:
+```python
+    elif name == "delete_document":
+        result = delete_document(document_id=arguments["document_id"])
+    else:
+```
+
+Add the new elif **between** `delete_document` and `else`:
+```python
+    elif name == "delete_document":
+        result = delete_document(document_id=arguments["document_id"])
+    elif name == "update_document":
+        result = update_document(
+            document_id=arguments["document_id"],
+            metadata=arguments["metadata"]
+        )
+    else:
+```
+
+---
+
+**Step C: Add implementation function**
+
+Find **line 272** which is the blank line after the `delete_document` function ends:
+```python
+        return {"success": False, "error": str(e), "message": "Failed to delete document"}
+
+
+# ============================================================
+# Server Entry Point
+```
+
+Add the new function **between** `delete_document` and the Server Entry Point comment:
+```python
+        return {"success": False, "error": str(e), "message": "Failed to delete document"}
+
+
+def update_document(document_id: str, metadata: dict) -> dict:
+    """Update document metadata (enrichment, tags, summary, etc.)"""
     try:
         client = get_supabase_client()
 
@@ -1026,13 +1162,12 @@ def update_document(
             "document_id": document_id,
             "message": "Metadata updated successfully"
         }
-
     except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-            "message": "Update failed"
-        }
+        return {"success": False, "error": str(e), "message": "Update failed"}
+
+
+# ============================================================
+# Server Entry Point
 ```
 
 ---
@@ -1042,9 +1177,11 @@ def update_document(
 **Step 1: Create the Three Agents (10 mins)**
 
 Create these subagent files:
-- `.claude/subagents/doc-processor.md` (based on Exercise 3.1, add validation logic)
-- `.claude/subagents/content-enricher.md` (new - summarize, extract entities, tag)
-- `.claude/subagents/search-interface.md` (new - natural language search)
+- `.claude/agents/doc-processor.md` (based on Exercise 3.1, add validation logic)
+- `.claude/agents/content-enricher.md` (new - summarize, extract entities, tag)
+- `.claude/agents/search-interface.md` (new - natural language search)
+
+HINT: Use Claude Code to build these agents with the context of the S4-workshop.
 
 **Step 2: Build the Pipeline (5 mins)**
 
