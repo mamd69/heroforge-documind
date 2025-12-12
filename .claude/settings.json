@@ -9,6 +9,14 @@
             "command": ".claude/hooks/SessionStart.sh"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/ValidateEnvironment.sh"
+          }
+        ]
       }
     ],
     "PostToolUse": [
