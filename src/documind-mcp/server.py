@@ -4,6 +4,7 @@ Provides document management tools for Claude Code
 
 Compatible with MCP SDK v2.x (uses @server.list_tools / @server.call_tool)
 """
+
 import os
 import json
 import asyncio
@@ -34,14 +35,15 @@ def get_supabase_client():
             "apikey": SUPABASE_KEY,
             "Authorization": f"Bearer {SUPABASE_KEY}",
             "Content-Type": "application/json",
-            "Prefer": "return=representation"
-        }
+            "Prefer": "return=representation",
+        },
     )
 
 
 # ============================================================
 # Tool Definitions - Tell Claude what tools are available
 # ============================================================
+
 
 @server.list_tools()
 async def list_tools() -> list[Tool]:
@@ -53,26 +55,23 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "title": {
-                        "type": "string",
-                        "description": "Document title"
-                    },
+                    "title": {"type": "string", "description": "Document title"},
                     "content": {
                         "type": "string",
-                        "description": "Full document content"
+                        "description": "Full document content",
                     },
                     "file_type": {
                         "type": "string",
                         "description": "Type of document (txt, pdf, docx, etc.)",
-                        "default": "txt"
+                        "default": "txt",
                     },
                     "metadata": {
                         "type": "object",
-                        "description": "Optional metadata dictionary"
-                    }
+                        "description": "Optional metadata dictionary",
+                    },
                 },
-                "required": ["title", "content"]
-            }
+                "required": ["title", "content"],
+            },
         ),
         Tool(
             name="search_documents",
@@ -80,22 +79,19 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "Search query string"
-                    },
+                    "query": {"type": "string", "description": "Search query string"},
                     "limit": {
                         "type": "integer",
                         "description": "Maximum number of results",
-                        "default": 5
+                        "default": 5,
                     },
                     "file_type": {
                         "type": "string",
-                        "description": "Optional filter by file type"
-                    }
+                        "description": "Optional filter by file type",
+                    },
                 },
-                "required": ["query"]
-            }
+                "required": ["query"],
+            },
         ),
         Tool(
             name="get_document",
@@ -105,11 +101,11 @@ async def list_tools() -> list[Tool]:
                 "properties": {
                     "document_id": {
                         "type": "string",
-                        "description": "UUID of the document"
+                        "description": "UUID of the document",
                     }
                 },
-                "required": ["document_id"]
-            }
+                "required": ["document_id"],
+            },
         ),
         Tool(
             name="delete_document",
@@ -119,18 +115,37 @@ async def list_tools() -> list[Tool]:
                 "properties": {
                     "document_id": {
                         "type": "string",
-                        "description": "UUID of the document to delete"
+                        "description": "UUID of the document to delete",
                     }
                 },
-                "required": ["document_id"]
-            }
-        )
+                "required": ["document_id"],
+            },
+        ),
+        Tool(
+            name="update_document",
+            description="Update document metadata (enrichment, tags, summary, etc.)",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "document_id": {
+                        "type": "string",
+                        "description": "UUID of document to update",
+                    },
+                    "metadata": {
+                        "type": "object",
+                        "description": "Dictionary of metadata to merge with existing",
+                    },
+                },
+                "required": ["document_id", "metadata"],
+            },
+        ),
     ]
 
 
 # ============================================================
 # Tool Implementations - Handle tool calls from Claude
 # ============================================================
+
 
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
@@ -141,18 +156,22 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             title=arguments["title"],
             content=arguments["content"],
             file_type=arguments.get("file_type", "txt"),
-            metadata=arguments.get("metadata")
+            metadata=arguments.get("metadata"),
         )
     elif name == "search_documents":
         result = search_documents(
             query=arguments["query"],
             limit=arguments.get("limit", 5),
-            file_type=arguments.get("file_type")
+            file_type=arguments.get("file_type"),
         )
     elif name == "get_document":
         result = get_document(document_id=arguments["document_id"])
     elif name == "delete_document":
         result = delete_document(document_id=arguments["document_id"])
+    elif name == "update_document":
+        result = update_document(
+            document_id=arguments["document_id"], metadata=arguments["metadata"]
+        )
     else:
         result = {"error": f"Unknown tool: {name}"}
 
@@ -163,7 +182,10 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 # Tool Logic Functions
 # ============================================================
 
-def upload_document(title: str, content: str, file_type: str = "txt", metadata: dict = None) -> dict:
+
+def upload_document(
+    title: str, content: str, file_type: str = "txt", metadata: dict = None
+) -> dict:
     """Upload a document to the DocuMind knowledge base."""
     try:
         client = get_supabase_client()
@@ -174,7 +196,7 @@ def upload_document(title: str, content: str, file_type: str = "txt", metadata: 
             "file_type": file_type,
             "metadata": metadata or {},
             "created_at": datetime.now().isoformat(),
-            "updated_at": datetime.now().isoformat()
+            "updated_at": datetime.now().isoformat(),
         }
 
         response = client.post("/documents", json=document)
@@ -187,10 +209,14 @@ def upload_document(title: str, content: str, file_type: str = "txt", metadata: 
             "success": True,
             "document_id": doc_id,
             "title": title,
-            "message": f"Document '{title}' uploaded successfully"
+            "message": f"Document '{title}' uploaded successfully",
         }
     except Exception as e:
-        return {"success": False, "error": str(e), "message": "Failed to upload document"}
+        return {
+            "success": False,
+            "error": str(e),
+            "message": "Failed to upload document",
+        }
 
 
 def search_documents(query: str, limit: int = 5, file_type: str = None) -> dict:
@@ -217,11 +243,15 @@ def search_documents(query: str, limit: int = 5, file_type: str = None) -> dict:
                     "id": doc["id"],
                     "title": doc["title"],
                     "file_type": doc["file_type"],
-                    "preview": doc["content"][:200] + "..." if len(doc["content"]) > 200 else doc["content"],
-                    "created_at": doc["created_at"]
+                    "preview": (
+                        doc["content"][:200] + "..."
+                        if len(doc["content"]) > 200
+                        else doc["content"]
+                    ),
+                    "created_at": doc["created_at"],
                 }
                 for doc in documents
-            ]
+            ],
         }
     except Exception as e:
         return {"success": False, "error": str(e), "message": "Search failed"}
@@ -251,11 +281,15 @@ def get_document(document_id: str) -> dict:
                 "file_type": document["file_type"],
                 "metadata": document["metadata"],
                 "created_at": document["created_at"],
-                "updated_at": document["updated_at"]
-            }
+                "updated_at": document["updated_at"],
+            },
         }
     except Exception as e:
-        return {"success": False, "error": str(e), "message": "Failed to retrieve document"}
+        return {
+            "success": False,
+            "error": str(e),
+            "message": "Failed to retrieve document",
+        }
 
 
 def delete_document(document_id: str) -> dict:
@@ -266,23 +300,66 @@ def delete_document(document_id: str) -> dict:
         response = client.delete(f"/documents?id=eq.{document_id}")
         response.raise_for_status()
 
-        return {"success": True, "message": f"Document {document_id} deleted successfully"}
+        return {
+            "success": True,
+            "message": f"Document {document_id} deleted successfully",
+        }
     except Exception as e:
-        return {"success": False, "error": str(e), "message": "Failed to delete document"}
+        return {
+            "success": False,
+            "error": str(e),
+            "message": "Failed to delete document",
+        }
+
+
+def update_document(document_id: str, metadata: dict) -> dict:
+    """Update document metadata (enrichment, tags, summary, etc.)"""
+    try:
+        client = get_supabase_client()
+
+        # Get current document
+        response = client.get(f"/documents?id=eq.{document_id}")
+        response.raise_for_status()
+        documents = response.json()
+
+        if not documents:
+            return {"success": False, "message": "Document not found"}
+
+        # Merge metadata
+        current_metadata = documents[0].get("metadata", {})
+        updated_metadata = {**current_metadata, **metadata}
+
+        # Update document
+        update_response = client.patch(
+            f"/documents?id=eq.{document_id}",
+            json={
+                "metadata": updated_metadata,
+                "updated_at": datetime.now().isoformat(),
+            },
+        )
+        update_response.raise_for_status()
+
+        return {
+            "success": True,
+            "document_id": document_id,
+            "message": "Metadata updated successfully",
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e), "message": "Update failed"}
 
 
 # ============================================================
 # Server Entry Point
 # ============================================================
 
+
 async def main():
     """Run the MCP server using stdio transport"""
     async with stdio_server() as (read_stream, write_stream):
         await server.run(
-            read_stream,
-            write_stream,
-            server.create_initialization_options()
+            read_stream, write_stream, server.create_initialization_options()
         )
+
 
 if __name__ == "__main__":
     asyncio.run(main())
