@@ -1,0 +1,1 @@
+This file will cause an error in one of the stages to test error handling.

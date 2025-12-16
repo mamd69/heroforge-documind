@@ -10,7 +10,14 @@ This skill provides guidance for creating effective skills.
 
 ## About Skills
 
+<<<<<<< HEAD
 Skills are modular, self-contained packages that extend Claude's capabilities by providing specialized knowledge, workflows, and tools. Think of them as "onboarding guides" for specific domains or tasks—they transform Claude from a general-purpose agent into a specialized agent equipped with procedural knowledge that no model can fully possess.
+=======
+Skills are modular, self-contained packages that extend Claude's capabilities by providing
+specialized knowledge, workflows, and tools. Think of them as "onboarding guides" for specific
+domains or tasks—they transform Claude from a general-purpose agent into a specialized agent
+equipped with procedural knowledge that no model can fully possess.
+>>>>>>> c4b60ab0f0fdb6fc8f492169c352a50d42140bc3
 
 ### What Skills Provide
 

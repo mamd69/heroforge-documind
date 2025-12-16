@@ -2,211 +2,171 @@
 DocuMind Document Upload Handler
 Demonstrates Skills, Subagents, and Hooks integration
 """
+
 import json
-import logging
-import os
 from datetime import datetime
 from pathlib import Path
 
-# Configure security logger
-logger = logging.getLogger(__name__)
-
-# Security constants
 ALLOWED_EXTENSIONS = {".txt", ".md", ".pdf"}
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
-
-# Base directory for allowed file access
-# Priority: 1) UPLOAD_DIR env var, 2) Project root (fixed path relative to this module)
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-BASE_UPLOAD_DIR = Path(os.getenv("DOCUMIND_UPLOAD_DIR", _PROJECT_ROOT)).resolve()
-
-# Validate BASE_UPLOAD_DIR exists at module load
-if not BASE_UPLOAD_DIR.is_dir():
-    logger.warning(f"BASE_UPLOAD_DIR does not exist: {BASE_UPLOAD_DIR}")
-    raise RuntimeError(f"Upload directory not found: {BASE_UPLOAD_DIR}")
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+# Base directory for uploads - all file operations restricted to this directory
+BASE_UPLOAD_DIR = Path.cwd()
 
 
-def validate_file_path(file_path):
+def validate_file_path(file_path, base_dir=None):
     """
     Validates that file path is safe and exists.
 
-    Security checks:
-    - Base directory containment (prevents path traversal)
-    - Validate file extension
-    - Check file size limits
+    Args:
+        file_path: Path to the file to validate
+        base_dir: Base directory to restrict file access (defaults to BASE_UPLOAD_DIR)
 
     Returns:
-        dict with 'valid' (bool) and 'error' (str or None)
+        tuple: (is_valid: bool, error_message: str or None)
+
+    Security checks:
+    - Input type validation
+    - Path traversal prevention via resolve()
+    - Symlink rejection
+    - Allowed file extensions
+    - File existence
+    - File size limits
     """
+    # Input type validation
+    if not isinstance(file_path, (str, Path)):
+        return False, "Invalid input: file_path must be a string or Path"
+
+    if base_dir is None:
+        base_dir = BASE_UPLOAD_DIR
+
+    base_dir = Path(base_dir).resolve()
     path = Path(file_path)
 
-    # Resolve to absolute path first (handles ../, symlinks, etc.)
+    # Resolve to absolute path to prevent traversal attacks
     try:
-        resolved = path.resolve()
-    except (OSError, ValueError, RuntimeError) as e:
-        logger.warning(f"Path resolution failed for '{file_path}': {e}")
-        return {"valid": False, "error": "Invalid file path"}
+        resolved_path = path.resolve()
+    except (OSError, ValueError) as e:
+        return False, f"Invalid path: {e}"
 
-    # CRITICAL: Check resolved path is within allowed base directory
-    # This catches ALL path traversal variants (../, encoded, unicode, etc.)
+    # Verify path is within allowed base directory
     try:
-        resolved.relative_to(BASE_UPLOAD_DIR)
+        resolved_path.relative_to(base_dir)
     except ValueError:
-        logger.warning(
-            f"Path traversal attempt blocked: '{file_path}' resolved to '{resolved}' "
-            f"which is outside BASE_UPLOAD_DIR '{BASE_UPLOAD_DIR}'"
-        )
-        return {"valid": False, "error": "Access denied: path outside allowed directory"}
+        return False, "Access denied: path outside allowed directory"
 
-    # Check file exists
-    if not resolved.exists():
-        return {"valid": False, "error": "File does not exist"}
+    # Reject symlinks to prevent symlink attacks
+    if path.is_symlink():
+        return False, "Symlinks are not allowed"
 
-    if not resolved.is_file():
-        return {"valid": False, "error": "Path is not a file"}
+    # Validate file extension
+    if resolved_path.suffix.lower() not in ALLOWED_EXTENSIONS:
+        return False, f"Invalid extension. Allowed: {', '.join(ALLOWED_EXTENSIONS)}"
 
-    # Validate extension
-    ext = resolved.suffix.lower()
-    if ext not in ALLOWED_EXTENSIONS:
-        return {
-            "valid": False,
-            "error": f"Invalid extension. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}",
-        }
+    # Check if file exists
+    if not resolved_path.exists():
+        return False, "File does not exist"
+
+    if not resolved_path.is_file():
+        return False, "Path is not a file"
 
     # Check file size
-    try:
-        file_size = resolved.stat().st_size
-    except OSError as e:
-        logger.error(f"Failed to stat file '{resolved}': {e}")
-        return {"valid": False, "error": "Unable to read file information"}
-
+    file_size = resolved_path.stat().st_size
     if file_size > MAX_FILE_SIZE:
-        return {
-            "valid": False,
-            "error": f"File too large. Maximum allowed: {MAX_FILE_SIZE // (1024*1024)}MB",
-        }
+        return False, f"File too large. Max size: {MAX_FILE_SIZE // (1024*1024)}MB"
 
-    return {"valid": True, "error": None, "resolved_path": str(resolved)}
+    return True, None
 
 
 def read_document(file_path):
     """
     Reads document contents safely.
 
-    Handles:
-    - UTF-8 encoding with fallback to latin-1
-    - Binary files (PDF) return placeholder message
+    Args:
+        file_path: Path to the file to read
 
     Returns:
-        dict with 'success' (bool), 'content' (str or None), 'error' (str or None)
+        tuple: (contents: str or None, error_message: str or None)
+
+    Handles UTF-8 encoding with fallback to latin-1.
     """
     path = Path(file_path)
-    ext = path.suffix.lower()
 
-    # PDF files are binary - return indicator for further processing
-    if ext == ".pdf":
-        return {
-            "success": True,
-            "content": "[PDF binary content - requires specialized parser]",
-            "error": None,
-            "is_binary": True,
-        }
+    # Handle PDF files differently (return placeholder for binary)
+    if path.suffix.lower() == ".pdf":
+        return "[PDF binary content - requires PDF parser]", None
 
-    # Text-based files (.txt, .md)
-    try:
-        with open(file_path, "r", encoding="utf-8") as f:
-            content = f.read()
-        return {"success": True, "content": content, "error": None, "is_binary": False}
-    except UnicodeDecodeError:
-        # Fallback to latin-1 which can decode any byte sequence
+    # Try UTF-8 first, then fallback to latin-1
+    encodings = ["utf-8", "latin-1"]
+
+    for encoding in encodings:
         try:
-            with open(file_path, "r", encoding="latin-1") as f:
-                content = f.read()
-            return {
-                "success": True,
-                "content": content,
-                "error": None,
-                "is_binary": False,
-            }
-        except Exception as e:
-            # Log detailed error internally, return generic message
-            logger.error(f"Failed to read file '{file_path}' with latin-1: {e}")
-            return {"success": False, "content": None, "error": "Unable to read file"}
-    except Exception as e:
-        # Log detailed error internally, return generic message
-        logger.error(f"Failed to read file '{file_path}': {e}")
-        return {"success": False, "content": None, "error": "Unable to read file"}
+            with open(path, "r", encoding=encoding) as f:
+                contents = f.read()
+            return contents, None
+        except UnicodeDecodeError:
+            continue
+        except IOError as e:
+            return None, f"Error reading file: {str(e)}"
+
+    return None, "Unable to decode file with supported encodings"
 
 
 def extract_metadata(file_path, contents):
     """
     Extracts metadata from document.
 
-    Extracts:
-    - File name and extension
-    - File size (bytes and human-readable)
-    - Created and modified dates
-    - Line count, word count, character count
+    Args:
+        file_path: Path to the file
+        contents: File contents as string
 
     Returns:
-        dict with metadata fields
+        dict: Metadata including file info and content statistics
     """
     path = Path(file_path)
     stat = path.stat()
 
-    # File system metadata
-    file_size = stat.st_size
-    created_time = datetime.fromtimestamp(stat.st_ctime)
-    modified_time = datetime.fromtimestamp(stat.st_mtime)
+    # Calculate content statistics
+    lines = contents.split("\n") if contents else []
+    words = contents.split() if contents else []
 
-    # Content analysis (only for text content)
-    if contents and not contents.startswith("[PDF binary"):
-        lines = contents.split("\n")
-        line_count = len(lines)
-        word_count = len(contents.split())
-        char_count = len(contents)
-    else:
-        line_count = None
-        word_count = None
-        char_count = None
-
-    # Human-readable file size
-    def format_size(size_bytes):
-        for unit in ["B", "KB", "MB", "GB"]:
-            if size_bytes < 1024:
-                return f"{size_bytes:.1f} {unit}"
-            size_bytes /= 1024
-        return f"{size_bytes:.1f} TB"
-
-    return {
+    metadata = {
         "file_name": path.name,
-        "file_extension": path.suffix.lower(),
-        "file_size_bytes": file_size,
-        "file_size_human": format_size(file_size),
-        "created_at": created_time.isoformat(),
-        "modified_at": modified_time.isoformat(),
-        "line_count": line_count,
-        "word_count": word_count,
-        "char_count": char_count,
+        "extension": path.suffix.lower(),
+        "file_size_bytes": stat.st_size,
+        "file_size_human": _format_size(stat.st_size),
+        "created_date": datetime.fromtimestamp(stat.st_ctime).isoformat(),
+        "modified_date": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+        "line_count": len(lines),
+        "word_count": len(words),
+        "character_count": len(contents) if contents else 0,
     }
+
+    return metadata
+
+
+def _format_size(size_bytes):
+    """Format file size in human-readable format."""
+    for unit in ["B", "KB", "MB", "GB"]:
+        if size_bytes < 1024:
+            return f"{size_bytes:.1f} {unit}"
+        size_bytes /= 1024
+    return f"{size_bytes:.1f} TB"
 
 
 def analyze_document(file_path):
     """
     Main function: orchestrates document analysis.
 
-    Pipeline:
-    1. Validate the file path (security)
-    2. Read the document contents
-    3. Extract metadata
-    4. Return structured JSON analysis
+    Args:
+        file_path: Path to the document to analyze
 
     Returns:
-        dict with status, metadata, content preview, and any errors
+        dict: JSON-serializable analysis result with status, metadata, and content preview
     """
     result = {
         "status": "success",
         "file_path": file_path,
+        "timestamp": datetime.now().isoformat(),
         "validation": None,
         "metadata": None,
         "content_preview": None,
@@ -214,36 +174,31 @@ def analyze_document(file_path):
     }
 
     # Step 1: Validate file path
-    validation = validate_file_path(file_path)
-    result["validation"] = validation
+    is_valid, error = validate_file_path(file_path)
+    result["validation"] = {"valid": is_valid, "error": error}
 
-    if not validation["valid"]:
+    if not is_valid:
         result["status"] = "error"
-        result["error"] = validation["error"]
+        result["error"] = f"Validation failed: {error}"
         return result
 
     # Step 2: Read document contents
-    read_result = read_document(file_path)
+    contents, error = read_document(file_path)
 
-    if not read_result["success"]:
+    if error:
         result["status"] = "error"
-        result["error"] = read_result["error"]
+        result["error"] = f"Read failed: {error}"
         return result
 
-    content = read_result["content"]
-
     # Step 3: Extract metadata
-    metadata = extract_metadata(file_path, content)
-    result["metadata"] = metadata
+    result["metadata"] = extract_metadata(file_path, contents)
 
-    # Step 4: Create content preview (first 500 chars)
-    if content and not read_result.get("is_binary"):
-        preview_length = min(500, len(content))
-        result["content_preview"] = content[:preview_length]
-        if len(content) > preview_length:
+    # Step 4: Add content preview (first 500 chars)
+    if contents:
+        preview_length = min(500, len(contents))
+        result["content_preview"] = contents[:preview_length]
+        if len(contents) > preview_length:
             result["content_preview"] += "..."
-    else:
-        result["content_preview"] = content
 
     return result
 
@@ -252,7 +207,7 @@ def analyze_document(file_path):
 if __name__ == "__main__":
     # Create a sample document for testing
     test_doc = "test_document.txt"
-    with open(test_doc, 'w') as f:
+    with open(test_doc, "w") as f:
         f.write("Sample document for DocuMind testing.\nThis is line 2.")
 
     # Analyze it

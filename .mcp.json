@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "supabase": {
+      "command": "npx",
+      "args": ["-y", "@supabase/mcp-server-supabase"],
+      "env": {
+        "SUPABASE_URL": "https://lomajgukdzbejfavesbs.supabase.co",
+        "SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxvbWFqZ3VrZHpiZWpmYXZlc2JzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU1MTIxNzksImV4cCI6MjA4MTA4ODE3OX0.3pGVW5RgsRsYmaeYEtIkUXsH_fZ3mPaB1Bs1FZBy4ZI",
+        "SUPABASE_ACCESS_TOKEN": "sbp_1413e6b0839b8c15e0a474c82e07682ffd0dc0a7"
+      }
+    }
+  }
+}

@@ -207,15 +207,25 @@ def init_skill(skill_name, path):
 
     # Check if directory already exists
     if skill_dir.exists():
+<<<<<<< HEAD
         print(f"Error: Skill directory already exists: {skill_dir}")
+=======
+        print(f"❌ Error: Skill directory already exists: {skill_dir}")
+>>>>>>> c4b60ab0f0fdb6fc8f492169c352a50d42140bc3
         return None
 
     # Create skill directory
     try:
         skill_dir.mkdir(parents=True, exist_ok=False)
+<<<<<<< HEAD
         print(f"Created skill directory: {skill_dir}")
     except Exception as e:
         print(f"Error creating directory: {e}")
+=======
+        print(f"✅ Created skill directory: {skill_dir}")
+    except Exception as e:
+        print(f"❌ Error creating directory: {e}")
+>>>>>>> c4b60ab0f0fdb6fc8f492169c352a50d42140bc3
         return None
 
     # Create SKILL.md from template
@@ -228,9 +238,15 @@ def init_skill(skill_name, path):
     skill_md_path = skill_dir / 'SKILL.md'
     try:
         skill_md_path.write_text(skill_content)
+<<<<<<< HEAD
         print("Created SKILL.md")
     except Exception as e:
         print(f"Error creating SKILL.md: {e}")
+=======
+        print("✅ Created SKILL.md")
+    except Exception as e:
+        print(f"❌ Error creating SKILL.md: {e}")
+>>>>>>> c4b60ab0f0fdb6fc8f492169c352a50d42140bc3
         return None
 
     # Create resource directories with example files
@@ -241,20 +257,29 @@ def init_skill(skill_name, path):
         example_script = scripts_dir / 'example.py'
         example_script.write_text(EXAMPLE_SCRIPT.format(skill_name=skill_name))
         example_script.chmod(0o755)
+<<<<<<< HEAD
         print("Created scripts/example.py")
+=======
+        print("✅ Created scripts/example.py")
+>>>>>>> c4b60ab0f0fdb6fc8f492169c352a50d42140bc3
 
         # Create references/ directory with example reference doc
         references_dir = skill_dir / 'references'
         references_dir.mkdir(exist_ok=True)
         example_reference = references_dir / 'api_reference.md'
         example_reference.write_text(EXAMPLE_REFERENCE.format(skill_title=skill_title))
+<<<<<<< HEAD
         print("Created references/api_reference.md")
+=======
+        print("✅ Created references/api_reference.md")
+>>>>>>> c4b60ab0f0fdb6fc8f492169c352a50d42140bc3
 
         # Create assets/ directory with example asset placeholder
         assets_dir = skill_dir / 'assets'
         assets_dir.mkdir(exist_ok=True)
         example_asset = assets_dir / 'example_asset.txt'
         example_asset.write_text(EXAMPLE_ASSET)
+<<<<<<< HEAD
         print("Created assets/example_asset.txt")
     except Exception as e:
         print(f"Error creating resource directories: {e}")
@@ -262,6 +287,15 @@ def init_skill(skill_name, path):
 
     # Print next steps
     print(f"\nSkill '{skill_name}' initialized successfully at {skill_dir}")
+=======
+        print("✅ Created assets/example_asset.txt")
+    except Exception as e:
+        print(f"❌ Error creating resource directories: {e}")
+        return None
+
+    # Print next steps
+    print(f"\n✅ Skill '{skill_name}' initialized successfully at {skill_dir}")
+>>>>>>> c4b60ab0f0fdb6fc8f492169c352a50d42140bc3
     print("\nNext steps:")
     print("1. Edit SKILL.md to complete the TODO items and update the description")
     print("2. Customize or delete the example files in scripts/, references/, and assets/")
@@ -287,7 +321,11 @@ def main():
     skill_name = sys.argv[1]
     path = sys.argv[3]
 
+<<<<<<< HEAD
     print(f"Initializing skill: {skill_name}")
+=======
+    print(f"🚀 Initializing skill: {skill_name}")
+>>>>>>> c4b60ab0f0fdb6fc8f492169c352a50d42140bc3
     print(f"   Location: {path}")
     print()
 

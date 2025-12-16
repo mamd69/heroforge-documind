@@ -1,5 +1,6 @@
 # Workflow Patterns
 
+<<<<<<< HEAD
 This reference covers patterns for structuring multi-step processes in skills.
 
 ## Sequential Workflows
@@ -50,10 +51,25 @@ python scripts/analyze_form.py input.pdf
 ## Step 2: Create Field Mapping
 
 Based on the analysis, create a mapping of field names to values...
+=======
+## Sequential Workflows
+
+For complex tasks, break operations into clear, sequential steps. It is often helpful to give Claude an overview of the process towards the beginning of SKILL.md:
+
+```markdown
+Filling a PDF form involves these steps:
+
+1. Analyze the form (run analyze_form.py)
+2. Create field mapping (edit fields.json)
+3. Validate mapping (run validate_fields.py)
+4. Fill the form (run fill_form.py)
+5. Verify output (run verify_output.py)
+>>>>>>> c4b60ab0f0fdb6fc8f492169c352a50d42140bc3
 ```
 
 ## Conditional Workflows
 
+<<<<<<< HEAD
 Use conditional workflows when the next steps depend on an initial determination or when different paths apply to different scenarios.
 
 ### Pattern Structure
@@ -108,3 +124,15 @@ First, determine the document operation:
 3. **Include decision points** - Make branching conditions explicit
 4. **Reference scripts when needed** - Point to executable code for complex operations
 5. **Keep steps atomic** - Each step should be a single, completable action
+=======
+For tasks with branching logic, guide Claude through decision points:
+
+```markdown
+1. Determine the modification type:
+   **Creating new content?** → Follow "Creation workflow" below
+   **Editing existing content?** → Follow "Editing workflow" below
+
+2. Creation workflow: [steps]
+3. Editing workflow: [steps]
+```
+>>>>>>> c4b60ab0f0fdb6fc8f492169c352a50d42140bc3

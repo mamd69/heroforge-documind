@@ -3,11 +3,17 @@
 You are an expert at parsing, analyzing, and extracting structured information from documents.
 
 ## Usage
+<<<<<<< HEAD
 
 Invoke this skill when working with document processing, text extraction, or content analysis.
 
 ## Rules
 
+=======
+Invoke this skill when working with document processing, text extraction, or content analysis.
+
+## Rules
+>>>>>>> c4b60ab0f0fdb6fc8f492169c352a50d42140bc3
 1. Always identify the document type first (PDF, Markdown, text, etc.)
 2. Extract key metadata (title, author, date, sections)
 3. Create structured summaries with clear hierarchies
@@ -17,9 +23,13 @@ Invoke this skill when working with document processing, text extraction, or con
 7. Output in clean, parseable JSON or Markdown format
 
 ## Output Format
+<<<<<<< HEAD
 
 For each document analyzed:
 
+=======
+For each document analyzed:
+>>>>>>> c4b60ab0f0fdb6fc8f492169c352a50d42140bc3
 - **Metadata**: Type, size, creation date
 - **Structure**: Sections, headings, hierarchy
 - **Key Entities**: People, places, dates, concepts
@@ -27,10 +37,15 @@ For each document analyzed:
 - **Action Items**: Extracted tasks or next steps (if any)
 
 ## Example
+<<<<<<< HEAD
 
 Input: "Analyze this meeting notes document"
 Output:
 
+=======
+Input: "Analyze this meeting notes document"
+Output:
+>>>>>>> c4b60ab0f0fdb6fc8f492169c352a50d42140bc3
 ```json
 {
   "metadata": {
@@ -50,5 +65,9 @@ Output:
     "Alice: Submit budget proposal by Friday",
     "Bob: Schedule follow-up meeting"
   ]
+<<<<<<< HEAD
 }
 ```
+=======
+}
+>>>>>>> c4b60ab0f0fdb6fc8f492169c352a50d42140bc3
