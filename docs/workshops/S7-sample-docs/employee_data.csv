@@ -1,0 +1,21 @@
+Employee ID,Name,Department,Title,Email,Phone,Hire Date,Salary,Manager,Location,Status
+EMP001,Alice Johnson,Engineering,Engineering Manager,alice.johnson@heroforge.io,555-101-0001,2020-03-15,145000,David Rodriguez,San Francisco,Active
+EMP002,Bob Smith,Product,Product Manager,bob.smith@heroforge.io,555-101-0002,2021-06-01,125000,David Rodriguez,San Francisco,Active
+EMP003,Carol White,Human Resources,HR Director,carol.white@heroforge.io,555-101-0003,2019-11-20,135000,David Rodriguez,San Francisco,Active
+EMP004,David Brown,Engineering,Senior Developer,david.brown@heroforge.io,555-101-0004,2020-08-10,130000,Alice Johnson,Remote - Austin,Active
+EMP005,Emily Davis,Finance,Finance Lead,emily.davis@heroforge.io,555-101-0005,2021-02-14,120000,David Rodriguez,San Francisco,Active
+EMP006,Frank Miller,Engineering,DevOps Engineer,frank.miller@heroforge.io,555-101-0006,2022-01-03,115000,Alice Johnson,Remote - Seattle,Active
+EMP007,Grace Lee,Quality Assurance,QA Lead,grace.lee@heroforge.io,555-101-0007,2021-09-15,105000,Alice Johnson,San Francisco,Active
+EMP008,Henry Wilson,Engineering,Backend Developer,henry.wilson@heroforge.io,555-101-0008,2023-03-20,95000,Alice Johnson,San Francisco,Active
+EMP009,Iris Chen,Engineering,Frontend Developer,iris.chen@heroforge.io,555-101-0009,2023-05-08,92000,Alice Johnson,Remote - NYC,Active
+EMP010,Jack Thompson,Sales,Sales Representative,jack.thompson@heroforge.io,555-101-0010,2022-07-11,75000,Michael Scott,San Francisco,Active
+EMP011,Karen Martinez,Customer Success,Customer Success Manager,karen.martinez@heroforge.io,555-101-0011,2022-10-03,85000,Michael Scott,Remote - Denver,Active
+EMP012,Leo Garcia,Engineering,ML Engineer,leo.garcia@heroforge.io,555-101-0012,2024-01-15,140000,Alice Johnson,San Francisco,Active
+EMP013,Maria Rodriguez,Marketing,Marketing Coordinator,maria.rodriguez@heroforge.io,555-101-0013,2023-08-21,65000,Sarah Connor,San Francisco,Active
+EMP014,Nathan Park,Engineering,Security Analyst,nathan.park@heroforge.io,555-101-0014,2023-11-01,110000,Alice Johnson,San Francisco,Active
+EMP015,Olivia Turner,Product,UX Designer,olivia.turner@heroforge.io,555-101-0015,2022-04-18,98000,Bob Smith,Remote - LA,Active
+EMP016,Peter Chang,Engineering,Full Stack Developer,peter.chang@heroforge.io,555-101-0016,2024-02-05,88000,Alice Johnson,San Francisco,Active
+EMP017,Quinn Adams,Legal,Legal Counsel,quinn.adams@heroforge.io,555-101-0017,2021-12-01,150000,David Rodriguez,San Francisco,Active
+EMP018,Rachel Kim,Engineering,Data Engineer,rachel.kim@heroforge.io,555-101-0018,2023-06-12,105000,Alice Johnson,Remote - Boston,Active
+EMP019,Samuel Wright,IT,IT Support Specialist,samuel.wright@heroforge.io,555-101-0019,2024-03-01,62000,Frank Miller,San Francisco,Active
+EMP020,Tina Brooks,Human Resources,HR Coordinator,tina.brooks@heroforge.io,555-101-0020,2024-04-15,55000,Carol White,San Francisco,Active
