@@ -11,10 +11,10 @@ and comprehensive analytics. Designed for production deployment with:
 - Performance monitoring and insights
 
 Usage:
-    python -m src.documind.rag.production_qa "What is the vacation policy?"
-    python -m src.documind.rag.production_qa --compare "Benefits overview"
-    python -m src.documind.rag.production_qa --analytics
-    python -m src.documind.rag.production_qa --interactive
+    python src/documind/rag/production_qa.py "What is the vacation policy?"
+    python src/documind/rag/production_qa.py --compare "Benefits overview"
+    python src/documind/rag/production_qa.py --analytics
+    python src/documind/rag/production_qa.py --interactive
 """
 
 import os
@@ -32,14 +32,28 @@ from dotenv import load_dotenv
 from openai import OpenAI
 from supabase import create_client, Client
 
-from .search import search_documents, hybrid_search, get_query_embedding
-from .qa_pipeline import (
-    MODELS,
-    MODEL_INFO,
-    assemble_context,
-    build_qa_prompt,
-    _get_openrouter_client,
-)
+# Support both module and direct execution
+try:
+    from .search import search_documents, hybrid_search, get_query_embedding
+    from .qa_pipeline import (
+        MODELS,
+        MODEL_INFO,
+        assemble_context,
+        build_qa_prompt,
+        _get_openrouter_client,
+    )
+except ImportError:
+    # Direct execution - use absolute imports
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+    from src.documind.rag.search import search_documents, hybrid_search, get_query_embedding
+    from src.documind.rag.qa_pipeline import (
+        MODELS,
+        MODEL_INFO,
+        assemble_context,
+        build_qa_prompt,
+        _get_openrouter_client,
+    )
 
 # Load environment variables
 env_path = Path(__file__).resolve().parents[3] / ".env"
