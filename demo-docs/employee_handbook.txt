@@ -1,0 +1,33 @@
+# Employee Handbook - HeroForge Inc.
+
+## Section 5: Time Off and Leave Policies
+
+### 5.1 Vacation Policy
+
+All full-time employees receive 15 days of paid vacation per year. Vacation accrues at a rate of 1.25 days per month and begins accruing from your first day of employment.
+
+**Vacation Accrual by Tenure:**
+- Years 0-2: 15 days per year (1.25 days/month)
+- Years 3-5: 20 days per year (1.67 days/month)
+- Years 6+: 25 days per year (2.08 days/month)
+
+**Requesting Vacation:**
+Submit vacation requests through the HR portal at least two weeks in advance. Requests are approved based on business needs and team coverage. During peak periods (Q4, product launches), vacation requests may be limited.
+
+**Carryover Policy:**
+Unused vacation days can be carried over to the next calendar year, up to a maximum of 5 days. Any days beyond this limit will be forfeited on January 1st. We encourage employees to use their vacation time for work-life balance.
+
+### 5.2 Sick Leave
+
+Employees receive 10 days of paid sick leave annually. Sick leave can be used for:
+- Personal illness or injury
+- Medical appointments
+- Caring for immediate family members
+
+### 5.3 Remote Work
+
+HeroForge supports flexible work arrangements. Employees may work remotely up to 3 days per week with manager approval. Core collaboration hours are 10 AM - 3 PM local time.
+
+## Section 6: Benefits Overview
+
+See the Benefits Guide for complete details on health insurance, 401(k), and other benefits.
