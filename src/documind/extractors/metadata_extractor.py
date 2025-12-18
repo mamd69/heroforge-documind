@@ -1,11 +1,13 @@
 """
 Unified Metadata Extraction
 Extracts rich metadata from all document types
+Includes document fingerprinting for duplicate detection
 """
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 import re
+import hashlib
 
 class MetadataExtractor:
     """Extract and enrich document metadata"""
@@ -163,22 +165,43 @@ class MetadataExtractor:
             "suggested_tags": tags[:5]
         }
 
-    def extract_all(self, file_path: str, content: str) -> Dict:
+    def generate_fingerprint(self, content: str, normalize: bool = True) -> str:
+        """
+        Generate SHA-256 fingerprint of document content.
+
+        Args:
+            content: Document text content
+            normalize: Whether to normalize whitespace before hashing
+
+        Returns:
+            Hexadecimal SHA-256 hash string
+        """
+        if normalize:
+            # Normalize: lowercase, remove extra whitespace
+            content = ' '.join(content.lower().split())
+
+        return hashlib.sha256(content.encode('utf-8')).hexdigest()
+
+    def extract_all(self, file_path: str, content: str,
+                   format_metadata: Optional[Dict] = None) -> Dict:
         """
         Extract all metadata from a document.
 
         Args:
             file_path: Path to document file
             content: Extracted text content
+            format_metadata: Optional format-specific metadata
 
         Returns:
-            Comprehensive metadata dictionary
+            Comprehensive metadata dictionary with fingerprint
         """
         return {
             "basic": self.extract_basic_metadata(file_path, content),
             "structure": self.extract_structure(content),
             "entities": self.extract_entities(content),
-            "topics": self.extract_topics(content)
+            "topics": self.extract_topics(content),
+            "fingerprint": self.generate_fingerprint(content),
+            "format_metadata": format_metadata or {}
         }
 
 # Test
