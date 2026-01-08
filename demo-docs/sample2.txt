@@ -1,0 +1,68 @@
+TECHNICAL SPECIFICATION: PIPELINE ARCHITECTURE
+
+Document Processing Pipeline Overview
+=====================================
+
+The DocuMind pipeline consists of four sequential stages that transform raw documents into searchable, vector-embedded chunks stored in a PostgreSQL database with pgvector extension.
+
+STAGE 1: EXTRACTION
+-------------------
+Purpose: Extract text content from various file formats
+Input: File path (PDF, DOCX, XLSX, TXT, MD)
+Output: Extracted text + metadata (title, author, word count)
+Technology: PyPDF2, python-docx, openpyxl, pdfplumber
+Performance: < 2 seconds per document
+Error Handling: Format detection, encoding fallback, corrupt file recovery
+
+STAGE 2: CHUNKING
+-----------------
+Purpose: Split extracted text into semantic segments
+Input: Raw text from extraction stage
+Output: List of text chunks (~500 words each)
+Technology: NLTK sentence tokenization, boundary detection
+Performance: < 1 second per document
+Strategy: Hybrid semantic + fixed-size with 50-word overlap
+
+STAGE 3: EMBEDDING
+------------------
+Purpose: Generate vector representations of text chunks
+Input: List of text chunks
+Output: 1536-dimensional embeddings (one per chunk)
+Technology: OpenAI text-embedding-3-small API
+Performance: < 1 second per chunk (batch optimized)
+Optimization: Batch processing (100 chunks/call), rate limiting, retry logic
+
+STAGE 4: WRITING
+----------------
+Purpose: Store chunks and embeddings in database
+Input: Chunks with embeddings + metadata
+Output: Document ID, chunk IDs
+Technology: Supabase PostgreSQL + pgvector extension
+Performance: < 500ms per chunk (batch writes)
+Features: Transaction safety, HNSW indexing, rollback on failure
+
+PIPELINE METRICS
+---------------
+Target Throughput: 100+ documents/hour
+End-to-End Time: < 3 seconds per document
+Success Rate: 90%+ with error recovery
+Parallel Processing: 10+ concurrent documents
+Database: HNSW index for vector similarity search
+
+ERROR RECOVERY
+-------------
+- Continue-on-error mode for batch processing
+- Stage-specific error tracking and reporting
+- Automatic retry with exponential backoff
+- Dead-letter queue for persistent failures
+- Comprehensive logging and metrics
+
+SCALABILITY
+----------
+- Horizontal scaling via increased parallelism
+- Database connection pooling
+- Async I/O for non-blocking operations
+- Memory-efficient streaming for large files
+- Cloud-ready architecture (stateless agents)
+
+For implementation details, see the GOAP implementation plan.

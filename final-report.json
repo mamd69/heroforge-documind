@@ -1,0 +1,248 @@
+{
+  "metrics": {
+    "total_documents": 16,
+    "successful": 16,
+    "failed": 0,
+    "total_chunks": 16,
+    "total_embeddings": 16,
+    "total_time": 0.9468972682952881,
+    "stage_times": {
+      "extract": 1.6644477844238281,
+      "chunk": 0.8507208824157715,
+      "embed": 3.300151824951172,
+      "write": 1.6834378242492676
+    },
+    "errors_by_stage": {
+      "extract": 0,
+      "chunk": 0,
+      "embed": 0,
+      "write": 0
+    }
+  },
+  "results": [
+    {
+      "file_path": "demo-docs/sample3.md",
+      "status": "success",
+      "stage_completed": "write",
+      "chunks_created": 1,
+      "embeddings_generated": 1,
+      "processing_time": 0.4691317081451416,
+      "error_message": null,
+      "metadata": {
+        "document_id": "f8fe313448ac7610",
+        "file_name": "sample3.md",
+        "file_type": "md"
+      }
+    },
+    {
+      "file_path": "demo-docs/doc15.md",
+      "status": "success",
+      "stage_completed": "write",
+      "chunks_created": 1,
+      "embeddings_generated": 1,
+      "processing_time": 0.46909666061401367,
+      "error_message": null,
+      "metadata": {
+        "document_id": "31433ba53fce65ec",
+        "file_name": "doc15.md",
+        "file_type": "md"
+      }
+    },
+    {
+      "file_path": "demo-docs/doc11.md",
+      "status": "success",
+      "stage_completed": "write",
+      "chunks_created": 1,
+      "embeddings_generated": 1,
+      "processing_time": 0.46912074089050293,
+      "error_message": null,
+      "metadata": {
+        "document_id": "6d2fa190acf419ae",
+        "file_name": "doc11.md",
+        "file_type": "md"
+      }
+    },
+    {
+      "file_path": "demo-docs/doc13.md",
+      "status": "success",
+      "stage_completed": "write",
+      "chunks_created": 1,
+      "embeddings_generated": 1,
+      "processing_time": 0.4691355228424072,
+      "error_message": null,
+      "metadata": {
+        "document_id": "799eb575fefcced6",
+        "file_name": "doc13.md",
+        "file_type": "md"
+      }
+    },
+    {
+      "file_path": "demo-docs/doc8.md",
+      "status": "success",
+      "stage_completed": "write",
+      "chunks_created": 1,
+      "embeddings_generated": 1,
+      "processing_time": 0.46936702728271484,
+      "error_message": null,
+      "metadata": {
+        "document_id": "c0d3001038b4f4c8",
+        "file_name": "doc8.md",
+        "file_type": "md"
+      }
+    },
+    {
+      "file_path": "demo-docs/doc5.md",
+      "status": "success",
+      "stage_completed": "write",
+      "chunks_created": 1,
+      "embeddings_generated": 1,
+      "processing_time": 0.46941208839416504,
+      "error_message": null,
+      "metadata": {
+        "document_id": "5ca5ff01cd6dfcbe",
+        "file_name": "doc5.md",
+        "file_type": "md"
+      }
+    },
+    {
+      "file_path": "demo-docs/doc14.md",
+      "status": "success",
+      "stage_completed": "write",
+      "chunks_created": 1,
+      "embeddings_generated": 1,
+      "processing_time": 0.46944594383239746,
+      "error_message": null,
+      "metadata": {
+        "document_id": "6d48976c2e90152a",
+        "file_name": "doc14.md",
+        "file_type": "md"
+      }
+    },
+    {
+      "file_path": "demo-docs/sample1.md",
+      "status": "success",
+      "stage_completed": "write",
+      "chunks_created": 1,
+      "embeddings_generated": 1,
+      "processing_time": 0.4694845676422119,
+      "error_message": null,
+      "metadata": {
+        "document_id": "9ad3ad01ea954f8d",
+        "file_name": "sample1.md",
+        "file_type": "md"
+      }
+    },
+    {
+      "file_path": "demo-docs/doc9.md",
+      "status": "success",
+      "stage_completed": "write",
+      "chunks_created": 1,
+      "embeddings_generated": 1,
+      "processing_time": 0.9351613521575928,
+      "error_message": null,
+      "metadata": {
+        "document_id": "580c21a15b7336d3",
+        "file_name": "doc9.md",
+        "file_type": "md"
+      }
+    },
+    {
+      "file_path": "demo-docs/doc7.md",
+      "status": "success",
+      "stage_completed": "write",
+      "chunks_created": 1,
+      "embeddings_generated": 1,
+      "processing_time": 0.9352226257324219,
+      "error_message": null,
+      "metadata": {
+        "document_id": "8cf690344ff06574",
+        "file_name": "doc7.md",
+        "file_type": "md"
+      }
+    },
+    {
+      "file_path": "demo-docs/doc4.md",
+      "status": "success",
+      "stage_completed": "write",
+      "chunks_created": 1,
+      "embeddings_generated": 1,
+      "processing_time": 0.9352724552154541,
+      "error_message": null,
+      "metadata": {
+        "document_id": "597fc2cbef9e65f0",
+        "file_name": "doc4.md",
+        "file_type": "md"
+      }
+    },
+    {
+      "file_path": "demo-docs/doc6.md",
+      "status": "success",
+      "stage_completed": "write",
+      "chunks_created": 1,
+      "embeddings_generated": 1,
+      "processing_time": 0.9353146553039551,
+      "error_message": null,
+      "metadata": {
+        "document_id": "012304d8e036df34",
+        "file_name": "doc6.md",
+        "file_type": "md"
+      }
+    },
+    {
+      "file_path": "demo-docs/doc10.md",
+      "status": "success",
+      "stage_completed": "write",
+      "chunks_created": 1,
+      "embeddings_generated": 1,
+      "processing_time": 0.9353628158569336,
+      "error_message": null,
+      "metadata": {
+        "document_id": "099d50faff76758b",
+        "file_name": "doc10.md",
+        "file_type": "md"
+      }
+    },
+    {
+      "file_path": "demo-docs/doc12.md",
+      "status": "success",
+      "stage_completed": "write",
+      "chunks_created": 1,
+      "embeddings_generated": 1,
+      "processing_time": 0.9354085922241211,
+      "error_message": null,
+      "metadata": {
+        "document_id": "3884d72a4ef8b6ed",
+        "file_name": "doc12.md",
+        "file_type": "md"
+      }
+    },
+    {
+      "file_path": "demo-docs/bad-file.txt",
+      "status": "success",
+      "stage_completed": "write",
+      "chunks_created": 1,
+      "embeddings_generated": 1,
+      "processing_time": 0.9440083503723145,
+      "error_message": null,
+      "metadata": {
+        "document_id": "eb5a2534ca33a311",
+        "file_name": "bad-file.txt",
+        "file_type": "txt"
+      }
+    },
+    {
+      "file_path": "demo-docs/sample2.txt",
+      "status": "success",
+      "stage_completed": "write",
+      "chunks_created": 1,
+      "embeddings_generated": 1,
+      "processing_time": 0.9440646171569824,
+      "error_message": null,
+      "metadata": {
+        "document_id": "a9c3f4ce07a7d3b1",
+        "file_name": "sample2.txt",
+        "file_type": "txt"
+      }
+    }
+  ]
+}

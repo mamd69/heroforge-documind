@@ -562,7 +562,7 @@ Create a subagent called `.claude/agents/doc-writer.md` that:
 
 Test it on your DocuMind code from the demo!
 
-Pro-Tip: Create this one using the Claude Skill Creator skill that you can download here: https://github.com/anthropics/skills/tree/main/skills/skill-creator (just drag the file into your skills like Mark demonstrated in the lesson)
+Pro-Tip: First create a GitHub issue. Then ask Claude Code to implement the issue. Watch with amazement!
 
 ---
 
@@ -1559,6 +1559,8 @@ Create a skill at `.claude/skills/code-explainer/skill.md` that:
 - Suggests improvements
 - Generates beginner-friendly documentation
 
+Pro-Tip: 
+
 Test it on the upload_handler.py solution!
 
 ### Challenge 2: Testing Subagent
@@ -1576,6 +1578,33 @@ Create a PostToolUse hook for git operations that:
 - Auto-generates commit message from changes
 - Checks for sensitive data in commits
 - Updates CHANGELOG.md automatically
+
+### Challenge 4: Create a Skill Using the Skill Creator
+Use the **Claude Skill Creator** skill to build your own custom skill!
+
+**Setup:**
+1. Download the skill-creator skill from: https://github.com/anthropics/skills/tree/main/skills/skill-creator
+2. Drag the file into your `.claude/skills/` directory (just like Mark demonstrated in the lesson)
+
+**Task:**
+Use the skill-creator to build one of these skills:
+- **API Documentation Expert** - Generates OpenAPI/Swagger docs from code
+- **Performance Analyzer** - Reviews code for optimization opportunities
+- **Accessibility Checker** - Validates UI code for WCAG compliance
+- **Database Schema Designer** - Creates normalized database schemas from requirements
+
+**How to use:**
+```
+@skill-creator Create a skill for [your chosen domain]
+```
+
+The skill-creator will guide you through:
+- Defining the skill's purpose and expertise
+- Creating appropriate rules and constraints
+- Building example inputs/outputs
+- Structuring the skill.md file properly
+
+Test your new skill on real code from the DocuMind project!
 
 ---
 
