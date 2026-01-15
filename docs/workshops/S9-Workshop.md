@@ -553,12 +553,27 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 import json
 from supabase import create_client, Client
+from dotenv import load_dotenv
 
-# Configuration
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+# Load environment variables from .env file
+load_dotenv()
 
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+# Lazy-initialized Supabase client
+_supabase_client: Optional[Client] = None
+
+
+def get_supabase_client() -> Client:
+    """Get or create the Supabase client (lazy initialization)."""
+    global _supabase_client
+    if _supabase_client is None:
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_key = os.getenv("SUPABASE_ANON_KEY")
+        if not supabase_url or not supabase_key:
+            raise ValueError(
+                "SUPABASE_URL and SUPABASE_ANON_KEY must be set in .env file"
+            )
+        _supabase_client = create_client(supabase_url, supabase_key)
+    return _supabase_client
 
 class FeedbackCollector:
     """Collects and analyzes user feedback."""
@@ -602,7 +617,7 @@ class FeedbackCollector:
             'metadata': json.dumps(metadata) if metadata else None
         }
 
-        result = supabase.from_('feedback').insert(feedback_data).execute()
+        result = get_supabase_client().from_('feedback').insert(feedback_data).execute()
         return result.data[0]
 
     def get_message_feedback(self, message_id: int) -> List[Dict[str, Any]]:
@@ -615,7 +630,7 @@ class FeedbackCollector:
         Returns:
             List of feedback records
         """
-        result = supabase.from_('feedback') \
+        result = get_supabase_client().from_('feedback') \
             .select('*') \
             .eq('message_id', message_id) \
             .execute()
@@ -632,7 +647,7 @@ class FeedbackCollector:
         Returns:
             List of feedback records
         """
-        result = supabase.from_('feedback') \
+        result = get_supabase_client().from_('feedback') \
             .select('*') \
             .eq('conversation_id', conversation_id) \
             .execute()
@@ -652,7 +667,7 @@ class FeedbackCollector:
         cutoff = datetime.now() - timedelta(days=days)
 
         # Fetch recent feedback
-        result = supabase.from_('feedback') \
+        result = get_supabase_client().from_('feedback') \
             .select('*') \
             .gte('created_at', cutoff.isoformat()) \
             .execute()
@@ -705,7 +720,7 @@ class FeedbackCollector:
             List of low-rated queries with details
         """
         # Fetch low-rated feedback with message details
-        result = supabase.from_('feedback') \
+        result = get_supabase_client().from_('feedback') \
             .select('*, messages(content, sources)') \
             .lte('rating', min_rating) \
             .execute()
@@ -715,7 +730,7 @@ class FeedbackCollector:
             if feedback.get('messages'):
                 # Get the user query (previous message)
                 message_id = feedback['message_id']
-                msg_result = supabase.from_('messages') \
+                msg_result = get_supabase_client().from_('messages') \
                     .select('*') \
                     .eq('id', message_id - 1) \
                     .single() \
@@ -934,14 +949,32 @@ from datetime import datetime, timedelta
 import json
 import statistics
 from supabase import create_client, Client
+from dotenv import load_dotenv
 
-from .feedback import FeedbackCollector
+try:
+    from .feedback import FeedbackCollector
+except ImportError:
+    from feedback import FeedbackCollector
 
-# Configuration
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+# Load environment variables from .env file
+load_dotenv()
 
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+# Lazy-initialized Supabase client
+_supabase_client: Optional[Client] = None
+
+
+def get_supabase_client() -> Client:
+    """Get or create the Supabase client (lazy initialization)."""
+    global _supabase_client
+    if _supabase_client is None:
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_key = os.getenv("SUPABASE_ANON_KEY")
+        if not supabase_url or not supabase_key:
+            raise ValueError(
+                "SUPABASE_URL and SUPABASE_ANON_KEY must be set in .env file"
+            )
+        _supabase_client = create_client(supabase_url, supabase_key)
+    return _supabase_client
 
 class LearningSystem:
     """Learns from feedback to improve system performance."""
@@ -963,7 +996,7 @@ class LearningSystem:
         cutoff = datetime.now() - timedelta(days=days)
 
         # Fetch feedback with source information
-        result = supabase.from_('feedback') \
+        result = get_supabase_client().from_('feedback') \
             .select('*, messages(sources, metadata)') \
             .gte('created_at', cutoff.isoformat()) \
             .execute()
@@ -1038,7 +1071,7 @@ class LearningSystem:
         cutoff = datetime.now() - timedelta(days=days)
 
         # Fetch user's conversations
-        conv_result = supabase.from_('conversations') \
+        conv_result = get_supabase_client().from_('conversations') \
             .select('id') \
             .eq('user_id', user_id) \
             .gte('updated_at', cutoff.isoformat()) \
@@ -1050,7 +1083,7 @@ class LearningSystem:
             return {'message': 'No user activity in time period'}
 
         # Fetch messages from these conversations
-        msg_result = supabase.from_('messages') \
+        msg_result = get_supabase_client().from_('messages') \
             .select('*') \
             .in_('conversation_id', conversation_ids) \
             .eq('role', 'user') \
@@ -1059,7 +1092,7 @@ class LearningSystem:
         queries = [m['content'] for m in msg_result.data]
 
         # Fetch feedback for highly-rated responses
-        feedback_result = supabase.from_('feedback') \
+        feedback_result = get_supabase_client().from_('feedback') \
             .select('*, messages(sources)') \
             .in_('conversation_id', conversation_ids) \
             .gte('rating', 4) \
@@ -1329,12 +1362,16 @@ With memory, learning, and personalization
 import os
 from typing import Optional, Dict, Any, List
 from datetime import datetime
+from dotenv import load_dotenv
 from openai import OpenAI
 
 from documind.memory.conversation import ConversationMemory, list_user_conversations
 from documind.memory.feedback import FeedbackCollector
 from documind.memory.learning import LearningSystem
 from documind.rag.search import search_documents
+
+# Load environment variables from .env
+load_dotenv()
 
 # Configuration
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
