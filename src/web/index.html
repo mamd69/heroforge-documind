@@ -1,0 +1,1006 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DocuMind - AI Document Assistant</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                    colors: {
+                        dark: {
+                            50: '#f7f7f8',
+                            100: '#ececf1',
+                            200: '#d9d9e3',
+                            300: '#c5c5d2',
+                            400: '#acacbe',
+                            500: '#8e8ea0',
+                            600: '#565869',
+                            700: '#40414f',
+                            800: '#343541',
+                            900: '#202123',
+                            950: '#0d0d0f',
+                        },
+                        accent: {
+                            primary: '#10a37f',
+                            hover: '#1a7f64',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        * {
+            scrollbar-width: thin;
+            scrollbar-color: #565869 transparent;
+        }
+        *::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        *::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        *::-webkit-scrollbar-thumb {
+            background-color: #565869;
+            border-radius: 3px;
+        }
+        .markdown-content h1, .markdown-content h2, .markdown-content h3 {
+            font-weight: 600;
+            margin-top: 1rem;
+            margin-bottom: 0.5rem;
+        }
+        .markdown-content h1 { font-size: 1.5rem; }
+        .markdown-content h2 { font-size: 1.25rem; }
+        .markdown-content h3 { font-size: 1.1rem; }
+        .markdown-content p { margin-bottom: 0.75rem; }
+        .markdown-content ul, .markdown-content ol {
+            margin-left: 1.5rem;
+            margin-bottom: 0.75rem;
+        }
+        .markdown-content ul { list-style-type: disc; }
+        .markdown-content ol { list-style-type: decimal; }
+        .markdown-content li { margin-bottom: 0.25rem; }
+        .markdown-content code {
+            background-color: #2d2d2d;
+            padding: 0.125rem 0.375rem;
+            border-radius: 0.25rem;
+            font-size: 0.875rem;
+            font-family: 'Fira Code', monospace;
+        }
+        .markdown-content pre {
+            background-color: #1e1e1e;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            overflow-x: auto;
+            margin-bottom: 0.75rem;
+        }
+        .markdown-content pre code {
+            background-color: transparent;
+            padding: 0;
+        }
+        .markdown-content blockquote {
+            border-left: 3px solid #10a37f;
+            padding-left: 1rem;
+            margin-left: 0;
+            color: #acacbe;
+        }
+        .markdown-content a {
+            color: #10a37f;
+            text-decoration: underline;
+        }
+        .typing-indicator span {
+            animation: bounce 1.4s infinite ease-in-out both;
+        }
+        .typing-indicator span:nth-child(1) { animation-delay: -0.32s; }
+        .typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
+        @keyframes bounce {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1); }
+        }
+        .drag-active {
+            border-color: #10a37f !important;
+            background-color: rgba(16, 163, 127, 0.1) !important;
+        }
+    </style>
+</head>
+<body class="bg-dark-900 text-dark-100 font-sans">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useCallback } = React;
+
+        // API Configuration
+        const API_BASE = 'http://localhost:8000';
+        const ALLOWED_FILE_TYPES = [
+            'application/pdf',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'text/plain',
+            'text/markdown',
+            'text/csv',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        ];
+        const FILE_EXTENSIONS = ['.pdf', '.docx', '.txt', '.md', '.csv', '.xlsx'];
+
+        // Icons Components
+        const Icons = {
+            Send: () => (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                </svg>
+            ),
+            Plus: () => (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+            ),
+            Menu: () => (
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+            ),
+            Close: () => (
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            ),
+            Copy: () => (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+            ),
+            Check: () => (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+            ),
+            Document: () => (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+            ),
+            Upload: () => (
+                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+            ),
+            Trash: () => (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+            ),
+            Chat: () => (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+            ),
+            ChevronDown: () => (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+            ),
+            ChevronUp: () => (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                </svg>
+            ),
+            ExternalLink: () => (
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
+            ),
+            Loader: () => (
+                <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+            ),
+            User: () => (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+            ),
+            Bot: () => (
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 2a2 2 0 012 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 017 7h1a1 1 0 011 1v3a1 1 0 01-1 1h-1v1a2 2 0 01-2 2H5a2 2 0 01-2-2v-1H2a1 1 0 01-1-1v-3a1 1 0 011-1h1a7 7 0 017-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 012-2M7.5 13A1.5 1.5 0 006 14.5 1.5 1.5 0 007.5 16 1.5 1.5 0 009 14.5 1.5 1.5 0 007.5 13m9 0a1.5 1.5 0 00-1.5 1.5 1.5 1.5 0 001.5 1.5 1.5 1.5 0 001.5-1.5 1.5 1.5 0 00-1.5-1.5z"/>
+                </svg>
+            ),
+        };
+
+        // API Functions
+        const api = {
+            async createConversation() {
+                const response = await fetch(`${API_BASE}/api/chat/conversations`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title: 'New Chat' })
+                });
+                if (!response.ok) throw new Error('Failed to create conversation');
+                return response.json();
+            },
+
+            async sendMessage(conversationId, message) {
+                const response = await fetch(`${API_BASE}/api/chat/conversations/${conversationId}/messages`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content: message })
+                });
+                if (!response.ok) throw new Error('Failed to send message');
+                return response.json();
+            },
+
+            async getMessages(conversationId) {
+                const response = await fetch(`${API_BASE}/api/chat/conversations/${conversationId}/messages`);
+                if (!response.ok) throw new Error('Failed to fetch messages');
+                return response.json();
+            },
+
+            async getConversations() {
+                const response = await fetch(`${API_BASE}/api/chat/conversations`);
+                if (!response.ok) throw new Error('Failed to fetch conversations');
+                return response.json();
+            },
+
+            async getDocuments() {
+                const response = await fetch(`${API_BASE}/api/documents`);
+                if (!response.ok) throw new Error('Failed to fetch documents');
+                return response.json();
+            },
+
+            async uploadDocument(file, onProgress) {
+                const formData = new FormData();
+                formData.append('file', file);
+
+                return new Promise((resolve, reject) => {
+                    const xhr = new XMLHttpRequest();
+                    xhr.open('POST', `${API_BASE}/api/documents`);
+
+                    xhr.upload.onprogress = (event) => {
+                        if (event.lengthComputable && onProgress) {
+                            onProgress(Math.round((event.loaded / event.total) * 100));
+                        }
+                    };
+
+                    xhr.onload = () => {
+                        if (xhr.status >= 200 && xhr.status < 300) {
+                            resolve(JSON.parse(xhr.responseText));
+                        } else {
+                            reject(new Error('Upload failed'));
+                        }
+                    };
+
+                    xhr.onerror = () => reject(new Error('Upload failed'));
+                    xhr.send(formData);
+                });
+            },
+
+            async deleteDocument(documentId) {
+                const response = await fetch(`${API_BASE}/api/documents/${documentId}`, {
+                    method: 'DELETE'
+                });
+                if (!response.ok) throw new Error('Failed to delete document');
+                return response.json();
+            }
+        };
+
+        // Markdown Renderer Component
+        function MarkdownContent({ content }) {
+            const html = React.useMemo(() => {
+                const rawHtml = marked.parse(content || '');
+                return DOMPurify.sanitize(rawHtml);
+            }, [content]);
+
+            return (
+                <div
+                    className="markdown-content"
+                    dangerouslySetInnerHTML={{ __html: html }}
+                />
+            );
+        }
+
+        // Citation Card Component
+        function CitationCard({ citation, index }) {
+            const [expanded, setExpanded] = useState(false);
+
+            return (
+                <div className="bg-dark-800 border border-dark-600 rounded-lg overflow-hidden">
+                    <button
+                        onClick={() => setExpanded(!expanded)}
+                        className="w-full px-3 py-2 flex items-center justify-between text-left hover:bg-dark-700 transition-colors"
+                    >
+                        <div className="flex items-center gap-2">
+                            <span className="flex items-center justify-center w-5 h-5 bg-accent-primary text-white text-xs rounded">
+                                {index + 1}
+                            </span>
+                            <span className="text-sm font-medium truncate">{citation.title || 'Source Document'}</span>
+                        </div>
+                        {expanded ? <Icons.ChevronUp /> : <Icons.ChevronDown />}
+                    </button>
+                    {expanded && (
+                        <div className="px-3 py-2 border-t border-dark-600 bg-dark-850">
+                            <p className="text-sm text-dark-300 mb-2">{citation.content}</p>
+                            {citation.source && (
+                                <div className="flex items-center gap-1 text-xs text-accent-primary">
+                                    <Icons.ExternalLink />
+                                    <span>{citation.source}</span>
+                                </div>
+                            )}
+                            {citation.score && (
+                                <div className="text-xs text-dark-400 mt-1">
+                                    Relevance: {(citation.score * 100).toFixed(1)}%
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        // Message Component
+        function Message({ message, isUser }) {
+            const [copied, setCopied] = useState(false);
+
+            const handleCopy = async () => {
+                await navigator.clipboard.writeText(message.content);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+            };
+
+            return (
+                <div className={`py-6 ${isUser ? 'bg-dark-900' : 'bg-dark-800'}`}>
+                    <div className="max-w-3xl mx-auto px-4 sm:px-6">
+                        <div className="flex gap-4">
+                            <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
+                                isUser ? 'bg-accent-primary' : 'bg-dark-600'
+                            }`}>
+                                {isUser ? <Icons.User /> : <Icons.Bot />}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1">
+                                    <span className="font-semibold text-sm">
+                                        {isUser ? 'You' : 'DocuMind'}
+                                    </span>
+                                </div>
+                                <div className="text-dark-200 leading-relaxed">
+                                    <MarkdownContent content={message.content} />
+                                </div>
+                                {!isUser && message.citations && message.citations.length > 0 && (
+                                    <div className="mt-4 space-y-2">
+                                        <span className="text-xs text-dark-400 uppercase tracking-wide">Sources</span>
+                                        <div className="grid gap-2">
+                                            {message.citations.map((citation, idx) => (
+                                                <CitationCard key={idx} citation={citation} index={idx} />
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                                {!isUser && (
+                                    <div className="mt-3 flex items-center gap-2">
+                                        <button
+                                            onClick={handleCopy}
+                                            className="flex items-center gap-1 px-2 py-1 text-xs text-dark-400 hover:text-dark-200 hover:bg-dark-700 rounded transition-colors"
+                                        >
+                                            {copied ? <Icons.Check /> : <Icons.Copy />}
+                                            {copied ? 'Copied!' : 'Copy'}
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // Typing Indicator Component
+        function TypingIndicator() {
+            return (
+                <div className="py-6 bg-dark-800">
+                    <div className="max-w-3xl mx-auto px-4 sm:px-6">
+                        <div className="flex gap-4">
+                            <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-dark-600">
+                                <Icons.Bot />
+                            </div>
+                            <div className="flex items-center gap-1 typing-indicator">
+                                <span className="w-2 h-2 bg-dark-400 rounded-full"></span>
+                                <span className="w-2 h-2 bg-dark-400 rounded-full"></span>
+                                <span className="w-2 h-2 bg-dark-400 rounded-full"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // Chat Input Component
+        function ChatInput({ onSend, disabled }) {
+            const [input, setInput] = useState('');
+            const textareaRef = useRef(null);
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                if (input.trim() && !disabled) {
+                    onSend(input.trim());
+                    setInput('');
+                    if (textareaRef.current) {
+                        textareaRef.current.style.height = 'auto';
+                    }
+                }
+            };
+
+            const handleKeyDown = (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSubmit(e);
+                }
+            };
+
+            const handleInput = (e) => {
+                setInput(e.target.value);
+                e.target.style.height = 'auto';
+                e.target.style.height = Math.min(e.target.scrollHeight, 200) + 'px';
+            };
+
+            return (
+                <div className="border-t border-dark-700 bg-dark-900 p-4">
+                    <form onSubmit={handleSubmit} className="max-w-3xl mx-auto">
+                        <div className="relative flex items-end bg-dark-800 rounded-xl border border-dark-600 focus-within:border-dark-500 shadow-lg">
+                            <textarea
+                                ref={textareaRef}
+                                value={input}
+                                onChange={handleInput}
+                                onKeyDown={handleKeyDown}
+                                placeholder="Ask about your documents..."
+                                disabled={disabled}
+                                rows={1}
+                                className="flex-1 bg-transparent px-4 py-3 pr-12 text-dark-100 placeholder-dark-500 resize-none focus:outline-none max-h-[200px]"
+                            />
+                            <button
+                                type="submit"
+                                disabled={!input.trim() || disabled}
+                                className="absolute right-2 bottom-2 p-2 text-dark-400 hover:text-accent-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            >
+                                {disabled ? <Icons.Loader /> : <Icons.Send />}
+                            </button>
+                        </div>
+                        <p className="text-xs text-dark-500 text-center mt-2">
+                            DocuMind can make mistakes. Verify important information.
+                        </p>
+                    </form>
+                </div>
+            );
+        }
+
+        // Document Upload Component
+        function DocumentUpload({ onUploadComplete }) {
+            const [isDragging, setIsDragging] = useState(false);
+            const [uploading, setUploading] = useState(false);
+            const [progress, setProgress] = useState(0);
+            const [error, setError] = useState(null);
+            const fileInputRef = useRef(null);
+
+            const validateFile = (file) => {
+                const extension = '.' + file.name.split('.').pop().toLowerCase();
+                if (!FILE_EXTENSIONS.includes(extension)) {
+                    return `Invalid file type. Allowed: ${FILE_EXTENSIONS.join(', ')}`;
+                }
+                if (file.size > 50 * 1024 * 1024) {
+                    return 'File too large. Maximum size is 50MB.';
+                }
+                return null;
+            };
+
+            const handleUpload = async (file) => {
+                const validationError = validateFile(file);
+                if (validationError) {
+                    setError(validationError);
+                    return;
+                }
+
+                setUploading(true);
+                setProgress(0);
+                setError(null);
+
+                try {
+                    await api.uploadDocument(file, setProgress);
+                    onUploadComplete();
+                } catch (err) {
+                    setError('Failed to upload document. Please try again.');
+                } finally {
+                    setUploading(false);
+                    setProgress(0);
+                }
+            };
+
+            const handleDrop = (e) => {
+                e.preventDefault();
+                setIsDragging(false);
+                const file = e.dataTransfer.files[0];
+                if (file) handleUpload(file);
+            };
+
+            const handleDragOver = (e) => {
+                e.preventDefault();
+                setIsDragging(true);
+            };
+
+            const handleDragLeave = () => {
+                setIsDragging(false);
+            };
+
+            const handleFileSelect = (e) => {
+                const file = e.target.files[0];
+                if (file) handleUpload(file);
+            };
+
+            return (
+                <div className="p-4">
+                    <div
+                        onDrop={handleDrop}
+                        onDragOver={handleDragOver}
+                        onDragLeave={handleDragLeave}
+                        onClick={() => fileInputRef.current?.click()}
+                        className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all
+                            ${isDragging ? 'drag-active border-accent-primary bg-accent-primary/10' : 'border-dark-600 hover:border-dark-500'}
+                            ${uploading ? 'pointer-events-none opacity-50' : ''}`}
+                    >
+                        <input
+                            ref={fileInputRef}
+                            type="file"
+                            onChange={handleFileSelect}
+                            accept={FILE_EXTENSIONS.join(',')}
+                            className="hidden"
+                        />
+                        <div className="flex flex-col items-center gap-2">
+                            {uploading ? (
+                                <>
+                                    <Icons.Loader />
+                                    <span className="text-sm text-dark-300">Uploading... {progress}%</span>
+                                    <div className="w-full bg-dark-700 rounded-full h-2 mt-2">
+                                        <div
+                                            className="bg-accent-primary h-2 rounded-full transition-all duration-300"
+                                            style={{ width: `${progress}%` }}
+                                        />
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <div className="text-dark-400">
+                                        <Icons.Upload />
+                                    </div>
+                                    <span className="text-sm text-dark-300">
+                                        Drop files or click to upload
+                                    </span>
+                                    <span className="text-xs text-dark-500">
+                                        PDF, DOCX, TXT, MD, CSV, XLSX (max 50MB)
+                                    </span>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                    {error && (
+                        <div className="mt-2 p-2 bg-red-900/20 border border-red-800 rounded-lg text-sm text-red-400">
+                            {error}
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        // Document List Component
+        function DocumentList({ documents, onDelete, loading }) {
+            if (loading) {
+                return (
+                    <div className="p-4 flex justify-center">
+                        <Icons.Loader />
+                    </div>
+                );
+            }
+
+            if (documents.length === 0) {
+                return (
+                    <div className="p-4 text-center text-dark-500 text-sm">
+                        No documents uploaded yet
+                    </div>
+                );
+            }
+
+            return (
+                <div className="p-2 space-y-1 max-h-48 overflow-y-auto">
+                    {documents.map((doc) => (
+                        <div
+                            key={doc.id}
+                            className="flex items-center justify-between p-2 rounded-lg hover:bg-dark-700 group"
+                        >
+                            <div className="flex items-center gap-2 min-w-0">
+                                <Icons.Document />
+                                <span className="text-sm truncate">{doc.title || doc.filename}</span>
+                            </div>
+                            <button
+                                onClick={() => onDelete(doc.id)}
+                                className="p-1 text-dark-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
+                            >
+                                <Icons.Trash />
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            );
+        }
+
+        // Sidebar Component
+        function Sidebar({
+            isOpen,
+            onClose,
+            conversations,
+            currentConversationId,
+            onNewChat,
+            onSelectConversation,
+            documents,
+            onDocumentUpload,
+            onDocumentDelete,
+            documentsLoading
+        }) {
+            const [showDocuments, setShowDocuments] = useState(true);
+
+            return (
+                <>
+                    {/* Mobile overlay */}
+                    {isOpen && (
+                        <div
+                            className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+                            onClick={onClose}
+                        />
+                    )}
+
+                    {/* Sidebar */}
+                    <aside className={`
+                        fixed lg:static inset-y-0 left-0 z-50
+                        w-72 bg-dark-950 border-r border-dark-800
+                        flex flex-col
+                        transform transition-transform duration-300 ease-in-out
+                        ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+                    `}>
+                        {/* Header */}
+                        <div className="p-4 border-b border-dark-800">
+                            <button
+                                onClick={onNewChat}
+                                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-dark-800 hover:bg-dark-700 border border-dark-700 rounded-xl text-sm font-medium transition-colors"
+                            >
+                                <Icons.Plus />
+                                New Chat
+                            </button>
+                        </div>
+
+                        {/* Conversations */}
+                        <div className="flex-1 overflow-y-auto p-2">
+                            <div className="text-xs text-dark-500 uppercase tracking-wide px-3 py-2">
+                                Conversations
+                            </div>
+                            {conversations.length === 0 ? (
+                                <div className="px-3 py-2 text-sm text-dark-500">
+                                    No conversations yet
+                                </div>
+                            ) : (
+                                <div className="space-y-1">
+                                    {conversations.map((conv) => (
+                                        <button
+                                            key={conv.id}
+                                            onClick={() => onSelectConversation(conv.id)}
+                                            className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm transition-colors
+                                                ${conv.id === currentConversationId
+                                                    ? 'bg-dark-800 text-dark-100'
+                                                    : 'text-dark-400 hover:bg-dark-800 hover:text-dark-200'}`}
+                                        >
+                                            <Icons.Chat />
+                                            <span className="truncate">{conv.title || 'New Chat'}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Documents Section */}
+                        <div className="border-t border-dark-800">
+                            <button
+                                onClick={() => setShowDocuments(!showDocuments)}
+                                className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium hover:bg-dark-800 transition-colors"
+                            >
+                                <span className="flex items-center gap-2">
+                                    <Icons.Document />
+                                    Documents
+                                </span>
+                                {showDocuments ? <Icons.ChevronUp /> : <Icons.ChevronDown />}
+                            </button>
+                            {showDocuments && (
+                                <div className="border-t border-dark-800">
+                                    <DocumentUpload onUploadComplete={onDocumentUpload} />
+                                    <DocumentList
+                                        documents={documents}
+                                        onDelete={onDocumentDelete}
+                                        loading={documentsLoading}
+                                    />
+                                </div>
+                            )}
+                        </div>
+                    </aside>
+                </>
+            );
+        }
+
+        // Welcome Screen Component
+        function WelcomeScreen() {
+            return (
+                <div className="flex-1 flex items-center justify-center p-6">
+                    <div className="max-w-2xl text-center">
+                        <div className="w-16 h-16 mx-auto mb-6 bg-accent-primary/20 rounded-2xl flex items-center justify-center">
+                            <div className="text-accent-primary">
+                                <Icons.Bot />
+                            </div>
+                        </div>
+                        <h1 className="text-3xl font-bold mb-4">Welcome to DocuMind</h1>
+                        <p className="text-dark-400 mb-8">
+                            Your AI-powered document assistant. Upload documents and ask questions to get intelligent, contextual answers with source citations.
+                        </p>
+                        <div className="grid sm:grid-cols-3 gap-4 text-left">
+                            <div className="p-4 bg-dark-800 rounded-xl border border-dark-700">
+                                <h3 className="font-semibold mb-2 text-accent-primary">Upload Documents</h3>
+                                <p className="text-sm text-dark-400">Support for PDF, DOCX, TXT, MD, CSV, and XLSX files</p>
+                            </div>
+                            <div className="p-4 bg-dark-800 rounded-xl border border-dark-700">
+                                <h3 className="font-semibold mb-2 text-accent-primary">Ask Questions</h3>
+                                <p className="text-sm text-dark-400">Get intelligent answers based on your document content</p>
+                            </div>
+                            <div className="p-4 bg-dark-800 rounded-xl border border-dark-700">
+                                <h3 className="font-semibold mb-2 text-accent-primary">View Citations</h3>
+                                <p className="text-sm text-dark-400">See exactly where answers come from in your documents</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // Error Toast Component
+        function ErrorToast({ message, onClose }) {
+            useEffect(() => {
+                const timer = setTimeout(onClose, 5000);
+                return () => clearTimeout(timer);
+            }, [onClose]);
+
+            return (
+                <div className="fixed bottom-4 right-4 z-50 animate-slide-up">
+                    <div className="flex items-center gap-3 px-4 py-3 bg-red-900/90 border border-red-700 rounded-xl shadow-lg">
+                        <span className="text-sm text-red-200">{message}</span>
+                        <button onClick={onClose} className="text-red-400 hover:text-red-200">
+                            <Icons.Close />
+                        </button>
+                    </div>
+                </div>
+            );
+        }
+
+        // Main App Component
+        function App() {
+            const [sidebarOpen, setSidebarOpen] = useState(false);
+            const [conversations, setConversations] = useState([]);
+            const [currentConversationId, setCurrentConversationId] = useState(null);
+            const [messages, setMessages] = useState([]);
+            const [documents, setDocuments] = useState([]);
+            const [isTyping, setIsTyping] = useState(false);
+            const [error, setError] = useState(null);
+            const [documentsLoading, setDocumentsLoading] = useState(true);
+            const messagesEndRef = useRef(null);
+
+            // Scroll to bottom on new messages
+            useEffect(() => {
+                messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+            }, [messages, isTyping]);
+
+            // Load initial data
+            useEffect(() => {
+                loadConversations();
+                loadDocuments();
+            }, []);
+
+            // Load messages when conversation changes
+            useEffect(() => {
+                if (currentConversationId) {
+                    loadMessages(currentConversationId);
+                }
+            }, [currentConversationId]);
+
+            const loadConversations = async () => {
+                try {
+                    const data = await api.getConversations();
+                    setConversations(data.conversations || data || []);
+                } catch (err) {
+                    console.error('Failed to load conversations:', err);
+                }
+            };
+
+            const loadMessages = async (conversationId) => {
+                try {
+                    const data = await api.getMessages(conversationId);
+                    setMessages(data.messages || data || []);
+                } catch (err) {
+                    console.error('Failed to load messages:', err);
+                    setMessages([]);
+                }
+            };
+
+            const loadDocuments = async () => {
+                setDocumentsLoading(true);
+                try {
+                    const data = await api.getDocuments();
+                    setDocuments(data.documents || data || []);
+                } catch (err) {
+                    console.error('Failed to load documents:', err);
+                }
+                setDocumentsLoading(false);
+            };
+
+            const handleNewChat = async () => {
+                try {
+                    const conversation = await api.createConversation();
+                    setConversations(prev => [conversation, ...prev]);
+                    setCurrentConversationId(conversation.id);
+                    setMessages([]);
+                    setSidebarOpen(false);
+                } catch (err) {
+                    setError('Failed to create new chat');
+                }
+            };
+
+            const handleSelectConversation = (id) => {
+                setCurrentConversationId(id);
+                setSidebarOpen(false);
+            };
+
+            const handleSendMessage = async (content) => {
+                if (!currentConversationId) {
+                    // Create new conversation first
+                    try {
+                        const conversation = await api.createConversation();
+                        setConversations(prev => [conversation, ...prev]);
+                        setCurrentConversationId(conversation.id);
+                        await sendMessageToConversation(conversation.id, content);
+                    } catch (err) {
+                        setError('Failed to send message');
+                    }
+                } else {
+                    await sendMessageToConversation(currentConversationId, content);
+                }
+            };
+
+            const sendMessageToConversation = async (conversationId, content) => {
+                // Add user message immediately
+                const userMessage = {
+                    id: Date.now().toString(),
+                    role: 'user',
+                    content,
+                    timestamp: new Date().toISOString()
+                };
+                setMessages(prev => [...prev, userMessage]);
+                setIsTyping(true);
+
+                try {
+                    const response = await api.sendMessage(conversationId, content);
+                    const assistantMessage = {
+                        id: response.id || (Date.now() + 1).toString(),
+                        role: 'assistant',
+                        content: response.content || response.answer || response.message,
+                        citations: response.citations || response.sources || [],
+                        timestamp: new Date().toISOString()
+                    };
+                    setMessages(prev => [...prev, assistantMessage]);
+
+                    // Update conversation title if needed
+                    if (conversations.find(c => c.id === conversationId)?.title === 'New Chat') {
+                        loadConversations();
+                    }
+                } catch (err) {
+                    setError('Failed to get response. Please try again.');
+                    // Remove the user message on error
+                    setMessages(prev => prev.filter(m => m.id !== userMessage.id));
+                } finally {
+                    setIsTyping(false);
+                }
+            };
+
+            const handleDocumentUpload = () => {
+                loadDocuments();
+            };
+
+            const handleDocumentDelete = async (documentId) => {
+                try {
+                    await api.deleteDocument(documentId);
+                    setDocuments(prev => prev.filter(d => d.id !== documentId));
+                } catch (err) {
+                    setError('Failed to delete document');
+                }
+            };
+
+            return (
+                <div className="h-screen flex overflow-hidden">
+                    <Sidebar
+                        isOpen={sidebarOpen}
+                        onClose={() => setSidebarOpen(false)}
+                        conversations={conversations}
+                        currentConversationId={currentConversationId}
+                        onNewChat={handleNewChat}
+                        onSelectConversation={handleSelectConversation}
+                        documents={documents}
+                        onDocumentUpload={handleDocumentUpload}
+                        onDocumentDelete={handleDocumentDelete}
+                        documentsLoading={documentsLoading}
+                    />
+
+                    <main className="flex-1 flex flex-col min-w-0">
+                        {/* Mobile header */}
+                        <header className="lg:hidden flex items-center justify-between px-4 py-3 border-b border-dark-800 bg-dark-900">
+                            <button
+                                onClick={() => setSidebarOpen(true)}
+                                className="p-2 -ml-2 text-dark-400 hover:text-dark-200"
+                            >
+                                <Icons.Menu />
+                            </button>
+                            <h1 className="font-semibold">DocuMind</h1>
+                            <button
+                                onClick={handleNewChat}
+                                className="p-2 -mr-2 text-dark-400 hover:text-dark-200"
+                            >
+                                <Icons.Plus />
+                            </button>
+                        </header>
+
+                        {/* Chat area */}
+                        {messages.length === 0 && !currentConversationId ? (
+                            <WelcomeScreen />
+                        ) : (
+                            <div className="flex-1 overflow-y-auto">
+                                {messages.map((message) => (
+                                    <Message
+                                        key={message.id}
+                                        message={message}
+                                        isUser={message.role === 'user'}
+                                    />
+                                ))}
+                                {isTyping && <TypingIndicator />}
+                                <div ref={messagesEndRef} />
+                            </div>
+                        )}
+
+                        {/* Input area */}
+                        <ChatInput onSend={handleSendMessage} disabled={isTyping} />
+                    </main>
+
+                    {/* Error toast */}
+                    {error && (
+                        <ErrorToast message={error} onClose={() => setError(null)} />
+                    )}
+                </div>
+            );
+        }
+
+        // Mount the app
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>

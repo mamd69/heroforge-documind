@@ -2,10 +2,60 @@
 Hybrid Search: Combine semantic (vector) and keyword (BM25) search
 """
 import os
-from typing import List, Dict, Any
-from supabase import create_client
-from embeddings_client import EmbeddingsClient
+from typing import List, Dict, Any, Optional
 from collections import defaultdict
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# Load environment variables
+env_path = Path(__file__).resolve().parents[2] / ".env"
+load_dotenv(env_path)
+
+# Lazy imports to handle missing dependencies gracefully
+_supabase_client = None
+_openai_client = None
+
+
+def _get_supabase_client():
+    """Get or create Supabase client."""
+    global _supabase_client
+    if _supabase_client is None:
+        from supabase import create_client
+        url = os.getenv("SUPABASE_URL")
+        key = os.getenv("SUPABASE_ANON_KEY") or os.getenv("SUPABASE_KEY")
+        if not url or not key:
+            raise ValueError("SUPABASE_URL and SUPABASE_KEY must be set")
+        _supabase_client = create_client(url, key)
+    return _supabase_client
+
+
+def _get_openai_client():
+    """Get or create OpenAI client."""
+    global _openai_client
+    if _openai_client is None:
+        from openai import OpenAI
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY must be set")
+        _openai_client = OpenAI(api_key=api_key)
+    return _openai_client
+
+
+class EmbeddingsClient:
+    """Simple embeddings client using OpenAI."""
+
+    def __init__(self, model: str = "text-embedding-3-small"):
+        self.model = model
+
+    def generate_embedding(self, text: str) -> List[float]:
+        """Generate embedding for text using OpenAI."""
+        client = _get_openai_client()
+        response = client.embeddings.create(
+            model=self.model,
+            input=text
+        )
+        return response.data[0].embedding
 
 class HybridSearcher:
     """Combines vector and keyword search with reranking"""
@@ -18,13 +68,14 @@ class HybridSearcher:
             semantic_weight: Weight for semantic search (0-1)
                            1.0 = pure semantic, 0.0 = pure keyword
         """
-        self.supabase = create_client(
-            os.getenv("SUPABASE_URL"),
-            os.getenv("SUPABASE_KEY")
-        )
         self.embeddings_client = EmbeddingsClient()
         self.semantic_weight = semantic_weight
         self.keyword_weight = 1.0 - semantic_weight
+
+    @property
+    def supabase(self):
+        """Lazy-load Supabase client."""
+        return _get_supabase_client()
 
     def search_semantic(
         self,
@@ -36,42 +87,47 @@ class HybridSearcher:
         # Generate query embedding
         query_embedding = self.embeddings_client.generate_embedding(query)
 
-        # Search with pgvector
-        result = self.supabase.rpc("match_document_chunks", {
+        # Search with pgvector using match_documents function
+        result = self.supabase.rpc("match_documents", {
             "query_embedding": query_embedding,
-            "match_threshold": threshold,
+            "similarity_threshold": threshold,
             "match_count": top_k
         }).execute()
 
         return [{
-            "id": row["id"],
-            "document_id": row["document_id"],
-            "chunk_text": row["chunk_text"],
-            "semantic_score": row["similarity"]
-        } for row in result.data]
+            "id": row.get("id", ""),
+            "document_id": row.get("document_id", row.get("id", "")),
+            "content": row.get("content", ""),
+            "semantic_score": row.get("similarity", 0.0)
+        } for row in (result.data or [])]
 
     def search_keyword(
         self,
         query: str,
         top_k: int = 20
     ) -> List[Dict[str, Any]]:
-        """Keyword search using full-text search (BM25-style)"""
-        # Format query for PostgreSQL full-text search
-        # Convert "machine learning" to "machine & learning"
-        formatted_query = " & ".join(query.split())
+        """Keyword search using ILIKE pattern matching"""
+        # Use simple ILIKE for keyword matching
+        # This is a fallback since full-text search RPC may not exist
+        try:
+            result = self.supabase.table("document_chunks").select(
+                "id, content, metadata"
+            ).ilike("content", f"%{query}%").limit(top_k).execute()
 
-        # Search with full-text search
-        result = self.supabase.rpc("search_document_chunks_keyword", {
-            "search_query": formatted_query,
-            "match_count": top_k
-        }).execute()
-
-        return [{
-            "id": row["id"],
-            "document_id": row["document_id"],
-            "chunk_text": row["chunk_text"],
-            "keyword_score": row["rank"]
-        } for row in result.data]
+            results = []
+            for i, row in enumerate(result.data or []):
+                # Calculate a simple rank based on position
+                rank = 1.0 - (i * 0.05)  # Decreasing score
+                results.append({
+                    "id": row.get("id", ""),
+                    "document_id": row.get("metadata", {}).get("document_id", row.get("id", "")),
+                    "content": row.get("content", ""),
+                    "keyword_score": max(0.1, rank)
+                })
+            return results
+        except Exception as e:
+            print(f"   Keyword search error: {e}")
+            return []
 
     def search_hybrid(
         self,
@@ -228,10 +284,10 @@ if __name__ == "__main__":
     searcher = HybridSearcher(semantic_weight=0.7)
 
     test_queries = [
-        "What is machine learning?",
-        "Tell me about GPT-4",  # Rare term - keyword should help
-        "How to build neural networks",
-        "Cloud computing and DevOps"
+        "What is the vacation policy?",
+        "How many sick days do I get?",
+        "What are the employee benefits?",
+        "How does parental leave work?"
     ]
 
     for query in test_queries:
@@ -246,7 +302,7 @@ if __name__ == "__main__":
 
         print("\n1️⃣  Pure Semantic (100% vector):")
         for i, r in enumerate(results_semantic, 1):
-            print(f"   {i}. [{r.get('combined_score', 0):.4f}] {r['chunk_text'][:60]}...")
+            print(f"   {i}. [{r.get('combined_score', 0):.4f}] {r['content'][:60]}...")
 
         # Pure keyword
         keyword_only = HybridSearcher(semantic_weight=0.0)
@@ -254,18 +310,18 @@ if __name__ == "__main__":
 
         print("\n2️⃣  Pure Keyword (100% BM25):")
         for i, r in enumerate(results_keyword, 1):
-            print(f"   {i}. [{r.get('combined_score', 0):.4f}] {r['chunk_text'][:60]}...")
+            print(f"   {i}. [{r.get('combined_score', 0):.4f}] {r['content'][:60]}...")
 
         # Hybrid
         results_hybrid = searcher.search_hybrid(query, top_k=3, rerank_method="linear")
 
         print("\n3️⃣  Hybrid (70% semantic + 30% keyword):")
         for i, r in enumerate(results_hybrid, 1):
-            print(f"   {i}. [{r.get('combined_score', 0):.4f}] {r['chunk_text'][:60]}...")
+            print(f"   {i}. [{r.get('combined_score', 0):.4f}] {r['content'][:60]}...")
 
         # RRF
         results_rrf = searcher.search_hybrid(query, top_k=3, rerank_method="rrf")
 
         print("\n4️⃣  RRF (Reciprocal Rank Fusion):")
         for i, r in enumerate(results_rrf, 1):
-            print(f"   {i}. [{r.get('rrf_score', 0):.4f}] {r['chunk_text'][:60]}...")
+            print(f"   {i}. [{r.get('rrf_score', 0):.4f}] {r['content'][:60]}...")

@@ -592,10 +592,14 @@ Where:
 > 🗄️ **Run in: Supabase SQL Editor**
 
 ```sql
+-- Increase memory limit for this session (required for large tables)
+SET maintenance_work_mem = '256MB';
+
 -- Add tsvector column for full-text search
+-- Note: Column is named "content" in document_chunks table
 ALTER TABLE document_chunks
 ADD COLUMN IF NOT EXISTS fts tsvector
-GENERATED ALWAYS AS (to_tsvector('english', chunk_text)) STORED;
+GENERATED ALWAYS AS (to_tsvector('english', content)) STORED;
 
 -- Create GIN index for fast text search
 CREATE INDEX IF NOT EXISTS document_chunks_fts_idx
@@ -603,7 +607,7 @@ ON document_chunks
 USING gin(fts);
 
 -- Test full-text search
-SELECT chunk_text, ts_rank(fts, query) AS rank
+SELECT content, ts_rank(fts, query) AS rank
 FROM document_chunks, to_tsquery('english', 'machine & learning') AS query
 WHERE fts @@ query
 ORDER BY rank DESC
@@ -616,6 +620,7 @@ LIMIT 5;
 
 ```sql
 -- Function for BM25-style keyword search
+-- Note: Returns "content" column (actual column name in document_chunks table)
 CREATE OR REPLACE FUNCTION search_document_chunks_keyword(
   search_query text,
   match_count int DEFAULT 10
@@ -624,7 +629,7 @@ RETURNS TABLE (
   id uuid,
   document_id uuid,
   chunk_index int,
-  chunk_text text,
+  content text,
   rank float
 )
 LANGUAGE plpgsql
@@ -635,7 +640,7 @@ BEGIN
     document_chunks.id,
     document_chunks.document_id,
     document_chunks.chunk_index,
-    document_chunks.chunk_text,
+    document_chunks.content,
     ts_rank(document_chunks.fts, to_tsquery('english', search_query)) AS rank
   FROM document_chunks
   WHERE document_chunks.fts @@ to_tsquery('english', search_query)
@@ -701,7 +706,7 @@ class HybridSearcher:
         return [{
             "id": row["id"],
             "document_id": row["document_id"],
-            "chunk_text": row["chunk_text"],
+            "content": row["content"],
             "semantic_score": row["similarity"]
         } for row in result.data]
 
@@ -724,7 +729,7 @@ class HybridSearcher:
         return [{
             "id": row["id"],
             "document_id": row["document_id"],
-            "chunk_text": row["chunk_text"],
+            "content": row["content"],
             "keyword_score": row["rank"]
         } for row in result.data]
 
@@ -901,7 +906,7 @@ if __name__ == "__main__":
 
         print("\n1️⃣  Pure Semantic (100% vector):")
         for i, r in enumerate(results_semantic, 1):
-            print(f"   {i}. [{r.get('combined_score', 0):.4f}] {r['chunk_text'][:60]}...")
+            print(f"   {i}. [{r.get('combined_score', 0):.4f}] {r['content'][:60]}...")
 
         # Pure keyword
         keyword_only = HybridSearcher(semantic_weight=0.0)
@@ -909,21 +914,21 @@ if __name__ == "__main__":
 
         print("\n2️⃣  Pure Keyword (100% BM25):")
         for i, r in enumerate(results_keyword, 1):
-            print(f"   {i}. [{r.get('combined_score', 0):.4f}] {r['chunk_text'][:60]}...")
+            print(f"   {i}. [{r.get('combined_score', 0):.4f}] {r['content'][:60]}...")
 
         # Hybrid
         results_hybrid = searcher.search_hybrid(query, top_k=3, rerank_method="linear")
 
         print("\n3️⃣  Hybrid (70% semantic + 30% keyword):")
         for i, r in enumerate(results_hybrid, 1):
-            print(f"   {i}. [{r.get('combined_score', 0):.4f}] {r['chunk_text'][:60]}...")
+            print(f"   {i}. [{r.get('combined_score', 0):.4f}] {r['content'][:60]}...")
 
         # RRF
         results_rrf = searcher.search_hybrid(query, top_k=3, rerank_method="rrf")
 
         print("\n4️⃣  RRF (Reciprocal Rank Fusion):")
         for i, r in enumerate(results_rrf, 1):
-            print(f"   {i}. [{r.get('rrf_score', 0):.4f}] {r['chunk_text'][:60]}...")
+            print(f"   {i}. [{r.get('rrf_score', 0):.4f}] {r['content'][:60]}...")
 ```
 
 > 🖥️ **Run in: Terminal**
