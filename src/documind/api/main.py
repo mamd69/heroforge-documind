@@ -8,12 +8,20 @@ Run with:
     uvicorn src.documind.api.main:app --reload --port 8000
 """
 
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables from .env file BEFORE other imports
+env_path = Path(__file__).resolve().parents[3] / ".env"
+load_dotenv(env_path)
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 import logging
 import time
+import os
 
 from .routes import chat, documents, search
 
@@ -61,12 +69,8 @@ Currently running in single-tenant mode (no authentication required).
 # CORS Middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",  # Vite dev server
-        "http://localhost:3000",  # Alternative dev port
-        "http://127.0.0.1:5173",
-        "http://127.0.0.1:3000",
-    ],
+    allow_origins=["*"],  # Allow all origins for development (Codespaces, localhost, etc.)
+    allow_origin_regex=r"https://.*\.app\.github\.dev",  # GitHub Codespaces
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

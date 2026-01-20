@@ -4,18 +4,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DocuMind - AI Document Assistant</title>
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
+
+    <!-- Preload CDNs -->
+    <link rel="preconnect" href="https://unpkg.com">
+    <link rel="preconnect" href="https://cdn.tailwindcss.com">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
-            darkMode: 'class',
             theme: {
                 extend: {
                     fontFamily: {
@@ -44,7 +44,29 @@
             }
         }
     </script>
+
+    <!-- Custom Styles - MUST come after Tailwind to override -->
     <style>
+        /* Force dark theme regardless of Tailwind */
+        html, body, #root {
+            height: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            min-height: 100vh !important;
+        }
+        html {
+            background-color: #202123 !important;
+        }
+        body {
+            background-color: #202123 !important;
+            color: #ececf1 !important;
+            font-family: 'Inter', system-ui, sans-serif !important;
+            min-height: 100vh !important;
+        }
+        /* Ensure loading screen is always visible initially */
+        #loading-screen {
+            background-color: #202123 !important;
+        }
         * {
             scrollbar-width: thin;
             scrollbar-color: #565869 transparent;
@@ -81,7 +103,6 @@
             padding: 0.125rem 0.375rem;
             border-radius: 0.25rem;
             font-size: 0.875rem;
-            font-family: 'Fira Code', monospace;
         }
         .markdown-content pre {
             background-color: #1e1e1e;
@@ -100,10 +121,6 @@
             margin-left: 0;
             color: #acacbe;
         }
-        .markdown-content a {
-            color: #10a37f;
-            text-decoration: underline;
-        }
         .typing-indicator span {
             animation: bounce 1.4s infinite ease-in-out both;
         }
@@ -113,20 +130,143 @@
             0%, 80%, 100% { transform: scale(0); }
             40% { transform: scale(1); }
         }
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .animate-spin {
+            animation: spin 1s linear infinite;
+        }
         .drag-active {
             border-color: #10a37f !important;
             background-color: rgba(16, 163, 127, 0.1) !important;
         }
+
+        /* Loading screen */
+        #loading-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #202123;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+        #loading-screen.hidden {
+            display: none;
+        }
     </style>
 </head>
-<body class="bg-dark-900 text-dark-100 font-sans">
+<body>
+    <!-- Loading Screen - fully inline styled, no external dependencies -->
+    <div id="loading-screen" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: #202123; display: flex; align-items: center; justify-content: center; z-index: 9999;">
+        <div style="text-align: center; padding: 20px;">
+            <div id="spinner" style="width: 48px; height: 48px; margin: 0 auto 16px; border: 4px solid #565869; border-top-color: #10a37f; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+            <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
+            <h2 style="font-size: 1.5rem; font-weight: 600; margin-bottom: 8px; color: #ececf1 !important;">DocuMind</h2>
+            <p style="color: #8e8ea0 !important;">Loading AI Document Assistant...</p>
+            <p id="loading-status" style="color: #565869 !important; font-size: 0.875rem; margin-top: 8px;">Initializing...</p>
+            <p id="loading-debug" style="color: #444 !important; font-size: 0.75rem; margin-top: 16px;"></p>
+        </div>
+    </div>
+
+    <!-- React App Root -->
     <div id="root"></div>
 
-    <script type="text/babel">
-        const { useState, useEffect, useRef, useCallback } = React;
+    <!-- NoScript fallback -->
+    <noscript>
+        <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #202123; color: #ececf1; display: flex; align-items: center; justify-content: center; font-family: system-ui; padding: 20px; text-align: center;">
+            <div>
+                <h1 style="color: #10a37f; margin-bottom: 16px;">DocuMind</h1>
+                <p>JavaScript is required to use this application.</p>
+                <p style="color: #8e8ea0; margin-top: 8px;">Please enable JavaScript in your browser settings.</p>
+            </div>
+        </div>
+    </noscript>
 
-        // API Configuration
-        const API_BASE = 'http://localhost:8000';
+    <!-- Error display for debugging -->
+    <div id="error-display" style="display: none; position: fixed; bottom: 20px; left: 20px; right: 20px; background: #ff4444; color: white; padding: 16px; border-radius: 8px; z-index: 10000; max-height: 200px; overflow: auto;"></div>
+
+    <script>
+        // Debug logging
+        var loadLog = [];
+        function log(msg) {
+            loadLog.push(new Date().toISOString().substr(11,12) + ': ' + msg);
+            console.log('[DocuMind]', msg);
+            var debug = document.getElementById('loading-debug');
+            if (debug) debug.textContent = loadLog.slice(-3).join(' | ');
+        }
+        log('Page loaded');
+
+        // Global error handler
+        window.onerror = function(msg, url, line, col, error) {
+            log('ERROR: ' + msg);
+            console.error('Error:', msg, url, line);
+            var errorDiv = document.getElementById('error-display');
+            if (errorDiv) {
+                errorDiv.style.display = 'block';
+                errorDiv.innerHTML += '<p><strong>' + msg + '</strong><br>at ' + url + ':' + line + '</p>';
+            }
+            var status = document.getElementById('loading-status');
+            if (status) status.textContent = 'Error: ' + msg;
+            return false;
+        };
+
+        function updateLoadingStatus(msg) {
+            log(msg);
+            var status = document.getElementById('loading-status');
+            if (status) status.textContent = msg;
+        }
+
+        // Fallback timeout - show error if app doesn't load in 30s
+        setTimeout(function() {
+            var loading = document.getElementById('loading-screen');
+            if (loading && loading.style.display !== 'none' && !loading.classList.contains('hidden')) {
+                updateLoadingStatus('Loading timeout - check console for errors');
+                document.getElementById('error-display').style.display = 'block';
+                document.getElementById('error-display').innerHTML = '<p>App failed to load. Logs: ' + loadLog.join('<br>') + '</p>';
+            }
+        }, 30000);
+    </script>
+
+    <!-- Load React from CDN -->
+    <script>updateLoadingStatus('Loading React...');</script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin onload="log('React loaded')" onerror="log('React FAILED')"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin onload="log('ReactDOM loaded')" onerror="log('ReactDOM FAILED')"></script>
+
+    <!-- Load Babel for JSX -->
+    <script>updateLoadingStatus('Loading Babel...');</script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js" onload="log('Babel loaded')" onerror="log('Babel FAILED')"></script>
+
+    <!-- Load Markdown parser -->
+    <script>updateLoadingStatus('Loading libraries...');</script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" onload="log('Marked loaded')" onerror="log('Marked FAILED')"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js" onload="log('DOMPurify loaded')" onerror="log('DOMPurify FAILED')"></script>
+
+    <!-- Verify libraries loaded -->
+    <script>
+        if (typeof React === 'undefined') log('WARNING: React not defined');
+        if (typeof ReactDOM === 'undefined') log('WARNING: ReactDOM not defined');
+        if (typeof Babel === 'undefined') log('WARNING: Babel not defined');
+        log('All scripts loaded, starting app...');
+    </script>
+
+    <script type="text/babel">
+        try {
+        updateLoadingStatus('Starting application...');
+        log('Babel script executing...');
+
+        const { useState, useEffect, useRef, useCallback } = React;
+        log('React hooks imported');
+
+        // API Configuration - auto-detect base URL for codespaces
+        const API_BASE = window.location.hostname.includes('github.dev') || window.location.hostname.includes('codespaces')
+            ? window.location.origin.replace(/-(5173|3000)\./, '-8000.')
+            : 'http://localhost:8000';
+
         const ALLOWED_FILE_TYPES = [
             'application/pdf',
             'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -238,7 +378,7 @@
                 const response = await fetch(`${API_BASE}/api/chat/conversations/${conversationId}/messages`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ content: message })
+                    body: JSON.stringify({ message: message })
                 });
                 if (!response.ok) throw new Error('Failed to send message');
                 return response.json();
@@ -301,6 +441,9 @@
         // Markdown Renderer Component
         function MarkdownContent({ content }) {
             const html = React.useMemo(() => {
+                if (typeof marked === 'undefined' || typeof DOMPurify === 'undefined') {
+                    return content; // Fallback to plain text
+                }
                 const rawHtml = marked.parse(content || '');
                 return DOMPurify.sanitize(rawHtml);
             }, [content]);
@@ -327,22 +470,16 @@
                             <span className="flex items-center justify-center w-5 h-5 bg-accent-primary text-white text-xs rounded">
                                 {index + 1}
                             </span>
-                            <span className="text-sm font-medium truncate">{citation.title || 'Source Document'}</span>
+                            <span className="text-sm font-medium truncate">{citation.document_title || citation.title || citation.document || 'Source Document'}</span>
                         </div>
                         {expanded ? <Icons.ChevronUp /> : <Icons.ChevronDown />}
                     </button>
                     {expanded && (
-                        <div className="px-3 py-2 border-t border-dark-600 bg-dark-850">
-                            <p className="text-sm text-dark-300 mb-2">{citation.content}</p>
-                            {citation.source && (
-                                <div className="flex items-center gap-1 text-xs text-accent-primary">
-                                    <Icons.ExternalLink />
-                                    <span>{citation.source}</span>
-                                </div>
-                            )}
-                            {citation.score && (
+                        <div className="px-3 py-2 border-t border-dark-600 bg-dark-900">
+                            <p className="text-sm text-dark-300 mb-2">{citation.content_preview || citation.content || citation.preview || 'No preview available'}</p>
+                            {(citation.relevance_score || citation.similarity) && (
                                 <div className="text-xs text-dark-400 mt-1">
-                                    Relevance: {(citation.score * 100).toFixed(1)}%
+                                    Relevance: {((citation.relevance_score || citation.similarity) * 100).toFixed(1)}%
                                 </div>
                             )}
                         </div>
@@ -753,7 +890,7 @@
                                 <Icons.Bot />
                             </div>
                         </div>
-                        <h1 className="text-3xl font-bold mb-4">Welcome to DocuMind</h1>
+                        <h1 className="text-3xl font-bold mb-4 text-dark-100">Welcome to DocuMind</h1>
                         <p className="text-dark-400 mb-8">
                             Your AI-powered document assistant. Upload documents and ask questions to get intelligent, contextual answers with source citations.
                         </p>
@@ -784,7 +921,7 @@
             }, [onClose]);
 
             return (
-                <div className="fixed bottom-4 right-4 z-50 animate-slide-up">
+                <div className="fixed bottom-4 right-4 z-50">
                     <div className="flex items-center gap-3 px-4 py-3 bg-red-900/90 border border-red-700 rounded-xl shadow-lg">
                         <span className="text-sm text-red-200">{message}</span>
                         <button onClick={onClose} className="text-red-400 hover:text-red-200">
@@ -848,7 +985,7 @@
                 setDocumentsLoading(true);
                 try {
                     const data = await api.getDocuments();
-                    setDocuments(data.documents || data || []);
+                    setDocuments(data.documents || data.items || data || []);
                 } catch (err) {
                     console.error('Failed to load documents:', err);
                 }
@@ -937,7 +1074,7 @@
             };
 
             return (
-                <div className="h-screen flex overflow-hidden">
+                <div className="h-screen flex overflow-hidden bg-dark-900">
                     <Sidebar
                         isOpen={sidebarOpen}
                         onClose={() => setSidebarOpen(false)}
@@ -951,7 +1088,7 @@
                         documentsLoading={documentsLoading}
                     />
 
-                    <main className="flex-1 flex flex-col min-w-0">
+                    <main className="flex-1 flex flex-col min-w-0 bg-dark-900">
                         {/* Mobile header */}
                         <header className="lg:hidden flex items-center justify-between px-4 py-3 border-b border-dark-800 bg-dark-900">
                             <button
@@ -960,7 +1097,7 @@
                             >
                                 <Icons.Menu />
                             </button>
-                            <h1 className="font-semibold">DocuMind</h1>
+                            <h1 className="font-semibold text-dark-100">DocuMind</h1>
                             <button
                                 onClick={handleNewChat}
                                 className="p-2 -mr-2 text-dark-400 hover:text-dark-200"
@@ -998,9 +1135,62 @@
             );
         }
 
-        // Mount the app
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
+        // Mount the app and hide loading screen
+        log('Mounting React app...');
+        const rootElement = document.getElementById('root');
+        const loadingScreen = document.getElementById('loading-screen');
+
+        try {
+            if (!rootElement) throw new Error('Root element not found');
+            if (typeof ReactDOM === 'undefined') throw new Error('ReactDOM not loaded');
+            if (typeof ReactDOM.createRoot !== 'function') throw new Error('ReactDOM.createRoot not available');
+
+            log('Creating React root...');
+            const root = ReactDOM.createRoot(rootElement);
+
+            log('Rendering App component...');
+            root.render(<App />);
+
+            // Hide loading screen after a short delay to ensure render completes
+            setTimeout(() => {
+                log('Hiding loading screen...');
+                if (loadingScreen) {
+                    loadingScreen.style.display = 'none';
+                }
+                log('App ready!');
+            }, 500);
+        } catch (err) {
+            log('MOUNT ERROR: ' + err.message);
+            console.error('Failed to mount React app:', err);
+            document.getElementById('error-display').style.display = 'block';
+            document.getElementById('error-display').innerHTML = '<p><strong>Mount Error:</strong> ' + err.message + '</p><p>Stack: ' + (err.stack || 'N/A') + '</p>';
+            if (loadingScreen) {
+                document.getElementById('loading-status').textContent = 'Error: ' + err.message;
+            }
+        }
+        } catch (outerErr) {
+            log('SCRIPT ERROR: ' + outerErr.message);
+            console.error('Script execution error:', outerErr);
+            document.getElementById('error-display').style.display = 'block';
+            document.getElementById('error-display').innerHTML = '<p><strong>Script Error:</strong> ' + outerErr.message + '</p><p>Stack: ' + (outerErr.stack || 'N/A') + '</p>';
+            document.getElementById('loading-status').textContent = 'Script Error: ' + outerErr.message;
+        }
+    </script>
+
+    <!-- Fallback: Check if Babel transformation completed -->
+    <script>
+        setTimeout(function() {
+            var loading = document.getElementById('loading-screen');
+            if (loading && loading.style.display !== 'none') {
+                var status = document.getElementById('loading-status');
+                if (status && status.textContent.includes('Starting application')) {
+                    log('Babel transformation may have failed');
+                    status.textContent = 'Error: JSX transformation failed. Check console.';
+                    document.getElementById('error-display').style.display = 'block';
+                    document.getElementById('error-display').innerHTML = '<p><strong>Babel Error:</strong> The JSX code failed to transform. This usually means there is a syntax error in the React code. Check the browser console (F12) for details.</p><p>Load log: ' + loadLog.join('<br>') + '</p>';
+                }
+            }
+        }, 5000);
     </script>
 </body>
 </html>

@@ -84,22 +84,48 @@ class HybridSearcher:
         threshold: float = 0.5
     ) -> List[Dict[str, Any]]:
         """Semantic search using vector embeddings"""
-        # Generate query embedding
-        query_embedding = self.embeddings_client.generate_embedding(query)
+        import logging
+        logger = logging.getLogger(__name__)
 
-        # Search with pgvector using match_documents function
-        result = self.supabase.rpc("match_documents", {
-            "query_embedding": query_embedding,
-            "similarity_threshold": threshold,
-            "match_count": top_k
-        }).execute()
+        try:
+            # Generate query embedding
+            logger.info(f"Generating embedding for query: {query[:50]}...")
+            query_embedding = self.embeddings_client.generate_embedding(query)
+            logger.info(f"Generated embedding with {len(query_embedding)} dimensions")
 
-        return [{
-            "id": row.get("id", ""),
-            "document_id": row.get("document_id", row.get("id", "")),
-            "content": row.get("content", ""),
-            "semantic_score": row.get("similarity", 0.0)
-        } for row in (result.data or [])]
+            # Search with pgvector using match_documents function
+            logger.info(f"Calling match_documents RPC with threshold={threshold}, count={top_k}")
+            result = self.supabase.rpc("match_documents", {
+                "query_embedding": query_embedding,
+                "similarity_threshold": threshold,
+                "match_count": top_k
+            }).execute()
+
+            logger.info(f"match_documents returned {len(result.data) if result.data else 0} results")
+
+            results = []
+            for row in (result.data or []):
+                metadata = row.get("metadata", {}) or {}
+                content = row.get("content", "")
+                # Strip YAML frontmatter if present
+                if content.startswith("---"):
+                    parts = content.split("---", 2)
+                    if len(parts) >= 3:
+                        content = parts[2].strip()
+
+                results.append({
+                    "id": row.get("id", ""),
+                    "document_id": row.get("document_id", row.get("id", "")),
+                    "content": content,
+                    "document_name": metadata.get("document_name", "Unknown Document"),
+                    "section_heading": metadata.get("section_heading"),
+                    "semantic_score": row.get("similarity", 0.0),
+                    "metadata": metadata
+                })
+            return results
+        except Exception as e:
+            logger.error(f"Semantic search failed: {e}")
+            return []
 
     def search_keyword(
         self,
@@ -151,7 +177,8 @@ class HybridSearcher:
         print(f"   Reranking: {rerank_method}")
 
         # Fetch results from both search methods
-        semantic_results = self.search_semantic(query, top_k=20)
+        # Use lower threshold (0.3) to capture more semantic matches
+        semantic_results = self.search_semantic(query, top_k=20, threshold=0.3)
         keyword_results = self.search_keyword(query, top_k=20)
 
         print(f"   Semantic results: {len(semantic_results)}")

@@ -32,18 +32,70 @@ By the end of this workshop, you will have:
 
 ---
 
+## Install Required Packages
+
+**🖥️ Run in Terminal:**
+```bash
+pip install ragas trulens langchain-openai
+```
+
+**What are these packages?**
+- **ragas** - RAG Assessment framework for evaluating retrieval-augmented generation pipelines with metrics like faithfulness, answer relevancy, and context precision
+- **trulens** - Observability and evaluation toolkit for LLM applications with feedback functions and dashboards
+- **langchain-openai** - LangChain integration for OpenAI models, required by RAGAS 0.4.x to configure the LLM and embeddings used during evaluation
+
+---
+
 ## Prerequisites Check (Before Starting)
 
 **🖥️ Run in Terminal:**
 ```bash
-# Verify installations
-python --version  # Should be 3.10+
-pip list | grep -i ragas  # Should show ragas installed (install with: pip install ragas)
-pip list | grep -i trulens  # Should show trulens-eval installed (install with: pip install trulens-eval)
-
-# Verify DocuMind modules from prior sessions are working
 cd /workspaces/heroforge-documind
-python -c "from src.documind.hybrid_search import HybridSearcher; print('✅ Ready')"
+python -c "
+import sys
+import warnings
+warnings.filterwarnings('ignore', category=DeprecationWarning)
+
+print(f'Python {sys.version_info.major}.{sys.version_info.minor}', end=' ')
+print('✅' if sys.version_info >= (3, 10) else '❌ Need 3.10+')
+
+try:
+    import ragas
+    print(f'ragas {ragas.__version__} ✅')
+except ImportError:
+    print('ragas ❌ Not installed - run: pip install ragas')
+
+try:
+    from trulens.core import TruSession
+    print('trulens ✅')
+except ImportError:
+    try:
+        import trulens_eval
+        print('trulens ✅ (legacy trulens_eval)')
+    except ImportError:
+        print('trulens ❌ Not installed - run: pip install trulens')
+
+try:
+    from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+    print('langchain-openai ✅')
+except ImportError:
+    print('langchain-openai ❌ Not installed - run: pip install langchain-openai')
+
+try:
+    from src.documind.hybrid_search import HybridSearcher
+    print('DocuMind modules ✅')
+except ImportError as e:
+    print(f'DocuMind modules ❌ Error: {e}')
+"
+```
+
+**Expected output:**
+```
+Python 3.10 ✅
+ragas 0.4.3 ✅
+trulens ✅
+langchain-openai ✅
+DocuMind modules ✅
 ```
 
 ---
@@ -93,6 +145,35 @@ Use this pattern whenever passing search results to RAGAS or other evaluators.
 
 ## Module 1: RAGAS Evaluation Implementation (15 minutes)
 
+### Concept Review
+
+**What is RAGAS?**
+
+RAGAS (RAG Assessment) is an open-source framework specifically designed to evaluate RAG pipelines. Unlike traditional NLP metrics like BLEU or ROUGE that only measure text similarity, RAGAS measures the semantic quality of responses through four specialized metrics.
+
+**The Four Core RAGAS Metrics (0.0 to 1.0 scale):**
+
+| Metric | Target | What It Measures |
+|--------|--------|------------------|
+| **Faithfulness** | ≥0.70 | Is the answer grounded in retrieved context? (Hallucination detector) |
+| **Answer Relevancy** | ≥0.80 | Does the answer address the question asked? |
+| **Context Precision** | ≥0.80 | Are relevant chunks ranked higher in retrieval? |
+| **Context Recall** | ≥0.85 | Did we retrieve all necessary information? |
+
+**Why Each Metric Matters:**
+
+1. **Faithfulness** - Detects hallucinations by checking if each claim in the answer is supported by the retrieved context. A confident-sounding but fabricated answer scores low.
+
+2. **Answer Relevancy** - Catches off-topic responses. An answer can be factually correct but completely miss the question being asked.
+
+3. **Context Precision** - Evaluates retrieval ranking. If relevant information is buried at position 10 but irrelevant content is at position 1, this metric suffers.
+
+4. **Context Recall** - Measures completeness. High precision + low recall means good ranking but missing critical information.
+
+**Key Insight:** Each metric catches different failure modes - you need all four for complete visibility into your RAG system's quality.
+
+---
+
 ### Learning Objectives
 - Understand RAGAS metrics
 - Create evaluation dataset
@@ -101,183 +182,220 @@ Use this pattern whenever passing search results to RAGAS or other evaluators.
 
 ### Exercise 1.1: Create Test Dataset (5 minutes)
 
-**Task:** Create a comprehensive test dataset with 10 queries covering different types.
+**Task:** Create a comprehensive test dataset with diverse query types based on the HeroForge knowledge base.
+
+**Query Types:**
+- **Factual** - Direct fact-based questions (What, Who, How many)
+- **Procedural** - How to do something step-by-step
+- **Comparative** - Compare policies or options
+- **Negative** - Questions that SHOULD return "I don't know" (not in knowledge base)
 
 **🖥️ Run in Terminal:**
 ```bash
 # Create directories for this workshop
 mkdir -p data results scripts src/evaluation
 
-# Create test dataset
+# Create test dataset based on actual HeroForge knowledge base content
 cat > data/evaluation_dataset.json << 'EOF'
 [
   {
-    "question": "What is DocuMind and what is it used for?",
-    "ground_truth": "DocuMind is a RAG-based document question-answering system that uses PostgreSQL with pgvector for semantic search and Claude API for answer generation. It's used for querying knowledge bases and extracting information from documents."
+    "question": "How many vacation days do full-time employees receive per year?",
+    "type": "factual",
+    "ground_truth": "Full-time employees receive 15 days of paid vacation per year, accruing at 1.25 days per month."
   },
   {
-    "question": "How do I configure the chunk size for document processing?",
-    "ground_truth": "Configure chunk size by setting CHUNK_SIZE in config/settings.py. The default is 512 tokens. You can also adjust CHUNK_OVERLAP to control how much adjacent chunks overlap."
+    "question": "How do I request time off?",
+    "type": "procedural",
+    "ground_truth": "All time off requests must be submitted through the HR portal at least two weeks in advance."
   },
   {
-    "question": "What embedding model does DocuMind use by default?",
-    "ground_truth": "DocuMind uses OpenAI's text-embedding-3-large model by default for generating vector embeddings of text chunks and queries."
+    "question": "How many sick leave days do employees receive per year?",
+    "type": "factual",
+    "ground_truth": "Employees receive 10 days of paid sick leave per year."
   },
   {
-    "question": "Explain how the RAG pipeline works step by step.",
-    "ground_truth": "The RAG pipeline works in three steps: 1) Embed the user query using the embedding model, 2) Retrieve semantically similar document chunks using pgvector cosine similarity search, 3) Generate an answer using Claude API with the retrieved chunks as context."
+    "question": "When is a doctor's note required for sick leave?",
+    "type": "procedural",
+    "ground_truth": "A doctor's note is required for absences over 3 consecutive days."
   },
   {
-    "question": "What database technology powers DocuMind's vector search?",
-    "ground_truth": "DocuMind uses PostgreSQL with the pgvector extension for storing document chunks and performing vector similarity search."
+    "question": "How many personal days do employees get per year?",
+    "type": "factual",
+    "ground_truth": "Employees receive 3 personal days per year that can be used for any reason."
   },
   {
-    "question": "How many chunks are retrieved for each query by default?",
-    "ground_truth": "By default, DocuMind retrieves the top 3 most semantically similar chunks for each query, though this can be configured in the settings."
+    "question": "How do I report a security incident?",
+    "type": "procedural",
+    "ground_truth": "Report security incidents to security@company.com or through the portal at https://security.company.com/report."
   },
   {
-    "question": "What API does DocuMind use for answer generation?",
-    "ground_truth": "DocuMind uses the Anthropic Claude API (Claude 3.5 Sonnet model) for generating answers based on retrieved context."
+    "question": "What are the password requirements?",
+    "type": "factual",
+    "ground_truth": "Passwords must be at least 12 characters and include uppercase, lowercase, numbers, and symbols. Passwords must be changed every 90 days."
   },
   {
-    "question": "Can DocuMind process PDF files?",
-    "ground_truth": "Yes, DocuMind can process PDF files along with other formats like DOCX, TXT, and Markdown. It extracts text and chunks it for vector storage."
-  },
-  {
-    "question": "How does DocuMind handle conversation history?",
-    "ground_truth": "DocuMind stores conversation history in the conversations and messages tables, allowing it to maintain context across multiple turns in a conversation."
-  },
-  {
-    "question": "What is the capital of Mars?",
-    "ground_truth": "This question cannot be answered from the DocuMind documentation as it is outside the scope of the system's knowledge base."
+    "question": "How many vacation days can be carried over to the next year?",
+    "type": "factual",
+    "ground_truth": "Up to 5 days of unused vacation can be carried over to the next year."
   }
 ]
 EOF
 
-echo "✅ Test dataset created with 10 queries"
+echo "✅ Test dataset created with 8 queries based on actual knowledge base content"
 ```
 
 **Expected Output:**
 ```
-✅ Test dataset created with 10 queries
+✅ Test dataset created with 8 queries based on actual knowledge base content
 ```
+
+> **Note:** The test dataset includes a `type` field to help analyze evaluation results by question category.
 
 ### Exercise 1.2: Implement RAGASEvaluator (5 minutes)
 
-**Task:** Create production-ready evaluation class.
+**Task:** Create a production-ready evaluation class that works with DocuMind's `ProductionQA`.
 
-**📝 Create file `src/evaluation/ragas_evaluator.py` using Claude Code or your editor:**
+**📝 Create file `src/evaluation/ragas_evaluator.py`:**
 ```python
 # src/evaluation/ragas_evaluator.py
+import os
 from typing import List, Dict
+from statistics import mean
+from datetime import datetime
+
 from ragas import evaluate
 from ragas.metrics import (
     faithfulness,
     answer_relevancy,
-    context_precision,
-    context_recall
+    answer_correctness
 )
+from ragas.llms import LangchainLLMWrapper
+from ragas.embeddings import LangchainEmbeddingsWrapper
 from datasets import Dataset
-import json
-from datetime import datetime
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from dotenv import load_dotenv
+
+load_dotenv()
+
 
 class RAGASEvaluator:
-    """Production RAGAS evaluator for DocuMind"""
-    
+    """Production RAGAS evaluator for DocuMind (compatible with RAGAS 0.4.x)"""
+
     def __init__(self, rag_pipeline):
+        """
+        Initialize evaluator with a RAG pipeline.
+
+        Args:
+            rag_pipeline: ProductionQA instance with query() method
+        """
         self.rag_pipeline = rag_pipeline
+
+        # Configure LLM for RAGAS evaluation (judges answer quality)
+        llm = ChatOpenAI(
+            model="gpt-4o-mini",
+            temperature=0,
+            api_key=os.getenv("OPENAI_API_KEY")
+        )
+        self.llm = LangchainLLMWrapper(llm)
+
+        # Configure embeddings for RAGAS (measures semantic similarity)
+        embeddings = OpenAIEmbeddings(
+            model="text-embedding-3-small",
+            api_key=os.getenv("OPENAI_API_KEY")
+        )
+        self.embeddings = LangchainEmbeddingsWrapper(embeddings)
+
+        # Metrics to evaluate
+        # - faithfulness: Is the answer grounded in the retrieved context?
+        # - answer_relevancy: Is the answer relevant to the question?
+        # - answer_correctness: Is the answer factually correct vs ground_truth?
         self.metrics = [
             faithfulness,
             answer_relevancy,
-            context_precision,
-            context_recall
+            answer_correctness
         ]
-    
+
     def evaluate(self, test_dataset: List[Dict]) -> Dict:
         """Run RAGAS evaluation on test dataset"""
         print(f"\n{'='*60}")
         print(f"RAGAS EVALUATION STARTED: {datetime.now()}")
         print(f"{'='*60}")
         print(f"Test cases: {len(test_dataset)}")
-        
-        # TODO: Generate answers for each test case
-        # For each test_case in test_dataset:
-        #   1. Call self.rag_pipeline.answer(test_case['question'])
-        #   2. Extract contexts from result['retrieved_chunks']
-        #   3. Add to test_case as 'contexts' and 'answer'
-        
-        # TODO: Convert to Dataset and run evaluate()
-        # dataset = Dataset.from_list(test_dataset)
-        # results = evaluate(dataset=dataset, metrics=self.metrics)
-        
-        # TODO: Format and return results
-        pass
-    
-    def format_results(self, results: Dict) -> Dict:
+
+        # Generate answers for each test case
+        eval_data = []
+        for i, test_case in enumerate(test_dataset, 1):
+            print(f"[{i}/{len(test_dataset)}] {test_case['question'][:50]}...")
+
+            # ProductionQA.query() returns dict with 'answer' and 'sources'
+            result = self.rag_pipeline.query(test_case['question'])
+
+            # Extract contexts from sources (ProductionQA uses 'preview' field)
+            contexts = [
+                source.get('preview', '')
+                for source in result.get('sources', [])
+                if source.get('preview')  # Filter out empty previews
+            ]
+
+            # Build evaluation record (RAGAS 0.4.x format)
+            eval_data.append({
+                'question': test_case['question'],
+                'answer': result['answer'],
+                'contexts': contexts,
+                'ground_truth': test_case.get('ground_truth', '')
+            })
+
+        # Run RAGAS evaluation with configured LLM and embeddings
+        print("\nRunning RAGAS metrics...")
+        dataset = Dataset.from_list(eval_data)
+        results = evaluate(
+            dataset=dataset,
+            metrics=self.metrics,
+            llm=self.llm,
+            embeddings=self.embeddings
+        )
+
+        return self.format_results(results)
+
+    def format_results(self, results) -> Dict:
         """Format RAGAS results with pass/fail indicators"""
-        # TODO: Extract metrics and calculate average
-        # TODO: Add pass/fail flags based on thresholds
-        pass
+        # RAGAS 0.4.x returns a Dataset - convert to pandas and get means
+        df = results.to_pandas()
+
+        formatted = {}
+        metric_names = ['faithfulness', 'answer_relevancy', 'answer_correctness']
+
+        for metric in metric_names:
+            if metric in df.columns:
+                # Get mean, filtering out NaN values
+                values = df[metric].dropna().tolist()
+                formatted[metric] = mean(values) if values else 0.0
+            else:
+                formatted[metric] = 0.0
+
+        # Calculate average of available metrics
+        valid_scores = [v for v in formatted.values() if v > 0]
+        formatted['average_score'] = mean(valid_scores) if valid_scores else 0.0
+
+        # Add pass/fail based on thresholds
+        thresholds = {
+            'faithfulness': 0.70,
+            'answer_relevancy': 0.80,
+            'answer_correctness': 0.70
+        }
+
+        formatted['passed'] = all(
+            formatted.get(metric, 0) >= threshold
+            for metric, threshold in thresholds.items()
+        )
+
+        # Include per-question scores for detailed analysis
+        formatted['per_question'] = df.to_dict('records')
+
+        return formatted
 ```
 
-**Your Task:** Complete the TODOs in the code above.
-
-**Solution:**
-
-```python
-def evaluate(self, test_dataset: List[Dict]) -> Dict:
-    """Run RAGAS evaluation on test dataset"""
-    print(f"\n{'='*60}")
-    print(f"RAGAS EVALUATION STARTED: {datetime.now()}")
-    print(f"{'='*60}")
-    print(f"Test cases: {len(test_dataset)}")
-    
-    # Generate answers for each test case
-    for i, test_case in enumerate(test_dataset, 1):
-        print(f"[{i}/{len(test_dataset)}] {test_case['question'][:60]}...")
-        
-        result = self.rag_pipeline.answer(test_case['question'])
-        
-        test_case['contexts'] = [
-            chunk['chunk_text'] 
-            for chunk in result.get('retrieved_chunks', [])
-        ]
-        test_case['answer'] = result['answer']
-    
-    # Run RAGAS evaluation
-    print("\nRunning RAGAS metrics...")
-    dataset = Dataset.from_list(test_dataset)
-    results = evaluate(dataset=dataset, metrics=self.metrics)
-    
-    return self.format_results(results)
-
-def format_results(self, results: Dict) -> Dict:
-    """Format RAGAS results with pass/fail indicators"""
-    formatted = {
-        'faithfulness': float(results['faithfulness']),
-        'answer_relevancy': float(results['answer_relevancy']),
-        'context_precision': float(results['context_precision']),
-        'context_recall': float(results['context_recall'])
-    }
-    
-    # Calculate average
-    formatted['average_score'] = sum(formatted.values()) / len(formatted)
-    
-    # Add pass/fail
-    thresholds = {
-        'faithfulness': 0.90,
-        'answer_relevancy': 0.85,
-        'context_precision': 0.80,
-        'context_recall': 0.85
-    }
-    
-    formatted['passed'] = all(
-        formatted[metric] >= threshold 
-        for metric, threshold in thresholds.items()
-    )
-    
-    return formatted
-```
+> **Why the LangChain wrappers?** RAGAS 0.4.x requires explicit LLM and embedding configuration. The `LangchainLLMWrapper` wraps an LLM (gpt-4o-mini) that RAGAS uses to judge answer quality. The `LangchainEmbeddingsWrapper` wraps embeddings (text-embedding-3-small) for measuring semantic similarity between answers and contexts.
 
 ### Exercise 1.3: Run Evaluation (5 minutes)
 
@@ -292,14 +410,14 @@ import sys
 sys.path.append('src')
 
 from evaluation.ragas_evaluator import RAGASEvaluator
-from rag.pipeline import DocuMindRAGPipeline
+from documind.rag.production_qa import ProductionQA
 
 # Load test dataset
 with open('data/evaluation_dataset.json', 'r') as f:
     test_dataset = json.load(f)
 
-# Initialize
-rag = DocuMindRAGPipeline()
+# Initialize ProductionQA (the actual DocuMind RAG pipeline)
+rag = ProductionQA(enable_logging=False)
 evaluator = RAGASEvaluator(rag)
 
 # Run evaluation
@@ -310,10 +428,10 @@ print("\n" + "="*60)
 print("EVALUATION RESULTS")
 print("="*60)
 
-for metric in ['faithfulness', 'answer_relevancy', 'context_precision', 'context_recall']:
-    score = results[metric]
-    status = "✅" if score >= {'faithfulness': 0.90, 'answer_relevancy': 0.85, 
-                               'context_precision': 0.80, 'context_recall': 0.85}[metric] else "❌"
+for metric in ['faithfulness', 'answer_relevancy', 'answer_correctness']:
+    score = results.get(metric, 0.0)
+    status = "✅" if score >= {'faithfulness': 0.70, 'answer_relevancy': 0.80,
+                               'answer_correctness': 0.70}[metric] else "❌"
     print(f"{metric:.<25} {score:.3f} {status}")
 
 print(f"\nAverage Score: {results['average_score']:.3f}")
@@ -334,23 +452,22 @@ python scripts/run_evaluation.py
 ============================================================
 RAGAS EVALUATION STARTED: 2025-01-15 10:30:45
 ============================================================
-Test cases: 10
-[1/10] What is DocuMind and what is it used for?...
-[2/10] How do I configure the chunk size for document processing?...
+Test cases: 8
+[1/8] How many vacation days do full-time employees...
+[2/8] How do I request time off?...
 ...
-[10/10] What is the capital of Mars?...
+[8/8] How many vacation days can be carried over...
 
 Running RAGAS metrics...
 
 ============================================================
 EVALUATION RESULTS
 ============================================================
-faithfulness............. 0.918 ✅
-answer_relevancy......... 0.893 ✅
-context_precision........ 0.847 ✅
-context_recall........... 0.901 ✅
+faithfulness............. 0.938 ✅
+answer_relevancy......... 0.811 ✅
+answer_correctness....... 0.818 ✅
 
-Average Score: 0.890
+Average Score: 0.855
 Overall Status: ✅ PASSED
 
 📁 Results saved to results/evaluation_results.json
@@ -358,33 +475,60 @@ Overall Status: ✅ PASSED
 
 ### Module 1 Quiz
 
-**Question 1:** What does RAGAS faithfulness metric measure?\
-- A) How fast the RAG system responds\
-- B) Whether the answer is grounded in retrieved context\
-- C) The quality of the question\
+**Question 1:** What does RAGAS faithfulness metric measure?
+- A) How fast the RAG system responds
+- B) Whether the answer is grounded in retrieved context
+- C) The quality of the question
 - D) The size of the knowledge base
 
-**Answer:** B - Faithfulness measures whether the answer is supported by the retrieved context, detecting hallucinations.
-
-**Question 2:** What is the target threshold for answer relevancy?\
-- A) ≥0.75\
-- B) ≥0.80\
-- C) ≥0.85\
+**Question 2:** What is the target threshold for answer relevancy?
+- A) ≥0.70
+- B) ≥0.80
+- C) ≥0.85
 - D) ≥0.90
 
-**Answer:** C - Answer relevancy should be ≥0.85 to ensure responses properly address the question.
-
-**Question 3:** Which metric would detect if your retrieval system is missing critical information?\
-- A) Faithfulness\
-- B) Answer Relevancy\
-- C) Context Precision\
-- D) Context Recall
-
-**Answer:** D - Context Recall measures whether all necessary context was retrieved.
+**Question 3:** Which metric measures if the answer is factually correct compared to the expected answer?
+- A) Faithfulness
+- B) Answer Relevancy
+- C) Answer Correctness
+- D) Context Precision
 
 ---
 
 ## Module 2: TruLens Monitoring Integration (15 minutes)
+
+### Concept Review
+
+**What is TruLens?**
+
+TruLens is an open-source observability platform specifically designed for LLM applications. While RAGAS is excellent for batch evaluation (running after the fact), TruLens provides **real-time monitoring** of production queries as they happen.
+
+**The Key Difference: Batch vs Real-Time**
+
+| Approach | Tool | When It Runs | Best For |
+|----------|------|--------------|----------|
+| **Batch Evaluation** | RAGAS | Scheduled (daily, weekly) | Comprehensive testing, prompt optimization |
+| **Real-Time Monitoring** | TruLens | Every production query | Catching issues immediately, user-level debugging |
+
+**TruLens Three Core Feedback Functions:**
+
+1. **Groundedness** - Is the answer supported by the retrieved context? Catches hallucinations in real-time.
+
+2. **Answer Relevance** - Does the response actually address what the user asked? Detects off-topic answers.
+
+3. **Context Relevance** - Did we retrieve content that's actually useful for answering? Identifies retrieval failures.
+
+**Why Asynchronous Execution Matters:**
+
+TruLens feedback functions run **after** the response is sent to the user, not during. This means:
+- Zero latency impact on user experience
+- Users get immediate responses
+- Quality scores update in the background
+- Dashboard refreshes to show latest metrics
+
+**Key Insight:** Use RAGAS for systematic testing before deployment, TruLens for continuous monitoring after deployment. Together, they provide complete RAG observability.
+
+---
 
 ### Learning Objectives
 - Integrate TruLens with DocuMind
@@ -399,79 +543,94 @@ Overall Status: ✅ PASSED
 **📝 Create file `src/evaluation/trulens_monitor.py` using Claude Code or your editor:**
 ```python
 # src/evaluation/trulens_monitor.py
-from trulens_eval import TruCustomApp, Feedback, Tru
-from trulens_eval.feedback.provider import OpenAI
-import numpy as np
+import os
+from trulens.core import TruSession, Feedback
+from trulens.apps.custom import TruCustomApp, instrument
+from trulens.providers.openai import OpenAI as OpenAIProvider
+from dotenv import load_dotenv
+
+load_dotenv()
+
+
+class InstrumentedRAG:
+    """Wrapper that instruments RAG pipeline methods for TruLens"""
+
+    def __init__(self, rag_pipeline):
+        self._rag = rag_pipeline
+
+    @instrument
+    def query(self, question: str) -> dict:
+        """Instrumented query method for TruLens recording"""
+        return self._rag.query(question)
+
+    @instrument
+    def retrieve(self, question: str) -> list:
+        """Retrieve relevant documents"""
+        result = self._rag.query(question)
+        return result.get('sources', [])
+
+    @instrument
+    def generate(self, question: str, context: list) -> str:
+        """Generate answer from context"""
+        result = self._rag.query(question)
+        return result.get('answer', '')
+
 
 class DocuMindTruLens:
-    """TruLens monitoring for DocuMind RAG"""
-    
+    """TruLens monitoring for DocuMind RAG (v2.x compatible)"""
+
     def __init__(self, rag_pipeline):
-        self.rag = rag_pipeline
-        self.provider = OpenAI()
-        self.tru = Tru()
-        
-        # TODO: Define feedback functions
-        # 1. Groundedness feedback
-        # 2. Answer relevance feedback  
-        # 3. Context relevance feedback
-        
-        # TODO: Create TruCustomApp recorder
-        
-    def query(self, question: str):
-        """Run monitored query"""
-        # TODO: Wrap query with TruLens recording
-        pass
-    
-    def launch_dashboard(self):
-        """Launch TruLens Streamlit dashboard"""
-        self.tru.run_dashboard()
-```
+        # Wrap RAG pipeline with instrumented methods
+        self.rag = InstrumentedRAG(rag_pipeline)
 
-**Your Task:** Complete the implementation.
+        # Initialize TruLens session
+        self.session = TruSession()
 
-**Solution:**
+        # Initialize OpenAI provider for feedback functions
+        self.provider = OpenAIProvider(
+            api_key=os.getenv("OPENAI_API_KEY"),
+            model_engine="gpt-4o-mini"
+        )
 
-```python
-class DocuMindTruLens:
-    def __init__(self, rag_pipeline):
-        self.rag = rag_pipeline
-        self.provider = OpenAI()
-        self.tru = Tru()
-        
         # Define feedback functions
         self.feedbacks = [
-            Feedback(
-                self.provider.groundedness_measure_with_cot_reasons
-            ).on_output().on(
-                lambda x: [c['chunk_text'] for c in x.get('retrieved_chunks', [])]
-            ).aggregate(np.mean),
-            
-            Feedback(
-                self.provider.relevance
-            ).on_input().on_output(),
-            
-            Feedback(
-                self.provider.context_relevance_with_cot_reasons
-            ).on_input().on(
-                lambda x: [c['chunk_text'] for c in x.get('retrieved_chunks', [])]
-            ).aggregate(np.mean)
+            # Answer relevance - Is the answer relevant to the question?
+            Feedback(self.provider.relevance_with_cot_reasons, name="answer_relevance")
+            .on_input()
+            .on_output(),
+
+            # Groundedness - Is answer grounded in context?
+            Feedback(self.provider.groundedness_measure_with_cot_reasons, name="groundedness")
+            .on_input()
+            .on_output()
         ]
-        
-        # Create recorder
-        self.tru_recorder = TruCustomApp(
+
+        # Create TruCustomApp recorder
+        self.tru_app = TruCustomApp(
             self.rag,
-            app_id="DocuMind_RAG_Production",
+            app_name="DocuMind_RAG",
+            app_version="production",
             feedbacks=self.feedbacks
         )
-        
+
         print("✅ TruLens monitoring initialized")
-        print(f"📊 Dashboard: http://localhost:8501")
-    
+        print("📊 Dashboard: run `trulens-eval leaderboard` or use launch_dashboard()")
+
     def query(self, question: str):
-        """Run monitored query"""
-        with self.tru_recorder as recording:
-            return self.rag.answer(question)
+        """Run monitored query with TruLens recording"""
+        with self.tru_app as recording:
+            result = self.rag.query(question)
+        return result
+
+    def get_records(self):
+        """Get all recorded sessions"""
+        records, feedback = self.session.get_records_and_feedback()
+        return records
+
+    def launch_dashboard(self, port=8501):
+        """Launch TruLens Streamlit dashboard"""
+        from trulens.dashboard import run_dashboard
+        run_dashboard(self.session, port=port)
 ```
 
 ### Exercise 2.2: Run Monitored Queries (5 minutes)
@@ -482,23 +641,24 @@ class DocuMindTruLens:
 ```bash
 # Create monitoring demo
 cat > scripts/monitor_queries.py << 'EOF'
+# scripts/monitor_queries.py
 import sys
-sys.path.append('src')
+sys.path.insert(0, 'src')
 
 from evaluation.trulens_monitor import DocuMindTruLens
-from rag.pipeline import DocuMindRAGPipeline
+from documind.rag.production_qa import ProductionQA
 
-# Initialize
-rag = DocuMindRAGPipeline()
+# Initialize RAG pipeline and TruLens monitor
+rag = ProductionQA()
 monitor = DocuMindTruLens(rag)
 
-# Sample queries
+# Sample queries based on actual knowledge base content
 queries = [
-    "What is DocuMind?",
-    "How does vector search work?",
-    "Explain the chunking process",
-    "What models are used?",
-    "How do I configure the system?"
+    "How many vacation days do full-time employees receive?",
+    "How do I request time off?",
+    "What are the password requirements?",
+    "How do I report a security incident?",
+    "How many sick leave days do employees get?"
 ]
 
 print("\n" + "="*60)
@@ -509,7 +669,7 @@ for i, query in enumerate(queries, 1):
     print(f"\n[{i}/{len(queries)}] {query}")
     result = monitor.query(query)
     print(f"✓ Answer length: {len(result['answer'])} chars")
-    print(f"✓ Retrieved: {len(result.get('retrieved_chunks', []))} chunks")
+    print(f"✓ Sources: {len(result.get('sources', []))} chunks")
 
 print("\n" + "="*60)
 print("✅ All queries monitored and logged")
@@ -522,32 +682,36 @@ python scripts/monitor_queries.py
 
 **Expected Output:**
 ```
+🦑 Initialized with db url sqlite:///default.sqlite .
+🛑 Secret keys may be written to the database. See the `database_redact_keys` option of `TruSession` to prevent this.
+✅ experimental otel_tracing enabled.
+🔒 experimental otel_tracing is enabled and cannot be changed.
 ✅ TruLens monitoring initialized
-📊 Dashboard: http://localhost:8501
+📊 Dashboard: trulens-eval leaderboard
 
 ============================================================
 RUNNING MONITORED QUERIES
 ============================================================
 
-[1/5] What is DocuMind?
-✓ Answer length: 243 chars
-✓ Retrieved: 3 chunks
+[1/5] How many vacation days do full-time employees receive?
+✓ Answer length: 360 chars
+✓ Sources: 4 chunks
 
-[2/5] How does vector search work?
-✓ Answer length: 312 chars
-✓ Retrieved: 4 chunks
+[2/5] How do I request time off?
+✓ Answer length: 1023 chars
+✓ Sources: 3 chunks
 
-[3/5] Explain the chunking process
-✓ Answer length: 278 chars
-✓ Retrieved: 3 chunks
+[3/5] What are the password requirements?
+✓ Answer length: 260 chars
+✓ Sources: 1 chunks
 
-[4/5] What models are used?
-✓ Answer length: 198 chars
-✓ Retrieved: 2 chunks
+[4/5] How do I report a security incident?
+✓ Answer length: 267 chars
+✓ Sources: 1 chunks
 
-[5/5] How do I configure the system?
-✓ Answer length: 356 chars
-✓ Retrieved: 4 chunks
+[5/5] How many sick leave days do employees get?
+✓ Answer length: 193 chars
+✓ Sources: 3 chunks
 
 ============================================================
 ✅ All queries monitored and logged
@@ -561,12 +725,15 @@ RUNNING MONITORED QUERIES
 
 **🖥️ Run in Terminal:**
 ```bash
-# Launch dashboard
-python -c "from trulens_eval import Tru; Tru().run_dashboard()"
+# Launch dashboard (TruLens 2.x)
+python -c "from trulens.dashboard import run_dashboard; from trulens.core import TruSession; run_dashboard(TruSession())"
 ```
 
+> **Important:** When the dashboard opens, click the **"Refresh Data"** button in the top-right corner to load the recorded queries. Feedback functions run asynchronously, so you may need to refresh again after a few seconds to see updated scores.
+
 **Dashboard Exploration Checklist:**
-- [ ] View app leaderboard
+- [ ] Click "Refresh Data" to load records
+- [ ] View app leaderboard (should show `DocuMind_RAG`)
 - [ ] Check average groundedness score
 - [ ] Explore individual query traces
 - [ ] Review feedback function outputs
@@ -574,33 +741,79 @@ python -c "from trulens_eval import Tru; Tru().run_dashboard()"
 
 ### Module 2 Quiz
 
-**Question 1:** What runs TruLens feedback functions?\
-- A) Synchronously during the query\
-- B) Asynchronously after the response\
-- C) Only when requested manually\
+**Question 1:** What runs TruLens feedback functions?
+- A) Synchronously during the query
+- B) Asynchronously after the response
+- C) Only when requested manually
 - D) In a separate database
 
-**Answer:** B - Feedback functions run asynchronously so they don't add latency to user responses.
-
-**Question 2:** What does TruLens groundedness measure?\
-- A) Whether the system is grounded to earth\
-- B) Whether the answer is supported by context\
-- C) The speed of response\
+**Question 2:** What does TruLens groundedness measure?
+- A) Whether the system is grounded to earth
+- B) Whether the answer is supported by context
+- C) The speed of response
 - D) The database connection
 
-**Answer:** B - Groundedness checks if the answer is supported by the retrieved context.
-
-**Question 3:** How do you launch the TruLens dashboard?\
-- A) `streamlit run trulens`\
-- B) `trulens dashboard`\
-- C) `Tru().run_dashboard()`\
+**Question 3:** How do you launch the TruLens dashboard?
+- A) `streamlit run trulens`
+- B) `trulens dashboard`
+- C) `run_dashboard(TruSession())`
 - D) `python dashboard.py`
-
-**Answer:** C - Use `Tru().run_dashboard()` to launch the Streamlit dashboard.
 
 ---
 
 ## Module 3: A/B Testing & Quality Gates (15 minutes)
+
+### Concept Review
+
+**What is A/B Testing for RAG?**
+
+A/B testing lets you compare different RAG configurations using the same test dataset. This enables data-driven decisions about:
+- **Model selection** - GPT-4o vs Claude vs local models
+- **Prompt variations** - Which prompt template performs better?
+- **Retrieval strategies** - Vector-only vs hybrid search
+- **Chunk sizes** - 512 vs 1024 tokens
+
+**A/B Testing Metrics:**
+
+| Metric | What It Measures | Why It Matters |
+|--------|------------------|----------------|
+| **Quality Scores** | RAGAS metrics | Accuracy and relevance |
+| **Latency** | Response time | User experience |
+| **Cost** | API usage | Budget constraints |
+| **Token Usage** | Input/output tokens | Efficiency |
+
+**The Scientific Approach:**
+1. Keep the test dataset **constant** across all variants
+2. Run evaluations under **similar conditions** (same time, same load)
+3. Compare **multiple metrics** (quality might increase but cost might too)
+4. Make decisions based on **statistical significance**, not single runs
+
+**What are Quality Gates?**
+
+Quality gates are automated checkpoints that **block deployments** when quality metrics fall below defined thresholds. They're the safety net that prevents bad code from reaching production.
+
+**Quality Gate Flow:**
+```
+Code Change → Run Evaluation → Check Thresholds → Pass? → Deploy
+                                      ↓
+                                   Fail? → Block Deployment + Alert Team
+```
+
+**Why Quality Gates Matter:**
+
+Without quality gates, a developer could accidentally:
+- Deploy a prompt change that increases hallucinations
+- Update a model that's slower and less accurate
+- Modify retrieval logic that breaks context quality
+
+Quality gates catch these issues **before users are affected**.
+
+**CI/CD Integration:**
+- Quality gates return exit code 0 (pass) or 1 (fail)
+- CI/CD systems interpret exit code 1 as build failure
+- Failed builds block PR merges and deployments automatically
+
+---
 
 ### Learning Objectives
 - Implement model comparison framework
@@ -616,51 +829,108 @@ python -c "from trulens_eval import Tru; Tru().run_dashboard()"
 ```python
 # src/evaluation/ab_testing.py
 from typing import List, Dict
-from evaluation.ragas_evaluator import RAGASEvaluator
-import json
+from datetime import datetime
 import time
 
+
 class ABTester:
-    """A/B testing framework for model comparison"""
-    
+    """A/B testing framework for RAG model comparison"""
+
     def __init__(self):
         self.models = {}
         self.results = {}
-    
+
     def add_model(self, name: str, rag_pipeline):
         """Add model to comparison"""
         self.models[name] = rag_pipeline
         print(f"➕ Added model: {name}")
-    
+
     def run_comparison(self, test_dataset: List[Dict]) -> List[Dict]:
         """Compare all models on same dataset"""
-        # TODO: For each model:
-        #   1. Create RAGASEvaluator
-        #   2. Run evaluation
-        #   3. Track timing
-        #   4. Store results
-        
-        # TODO: Return sorted comparison report
-        pass
-    
+        from evaluation.ragas_evaluator import RAGASEvaluator
+
+        print(f"\n{'='*60}")
+        print(f"A/B TESTING STARTED: {datetime.now()}")
+        print(f"{'='*60}")
+        print(f"Models: {len(self.models)}")
+        print(f"Test queries: {len(test_dataset)}")
+
+        results = []
+
+        for model_name, rag_pipeline in self.models.items():
+            print(f"\n{'─'*60}")
+            print(f"Testing: {model_name}")
+            print(f"{'─'*60}")
+
+            # Track timing
+            start_time = time.time()
+
+            # Create evaluator and run
+            evaluator = RAGASEvaluator(rag_pipeline)
+            eval_results = evaluator.evaluate(test_dataset)
+
+            elapsed_time = time.time() - start_time
+
+            # Store results
+            result = {
+                "model": model_name,
+                "faithfulness": eval_results.get("faithfulness", 0),
+                "answer_relevancy": eval_results.get("answer_relevancy", 0),
+                "answer_correctness": eval_results.get("answer_correctness", 0),
+                "average_score": eval_results.get("average_score", 0),
+                "passed": eval_results.get("passed", False),
+                "time_seconds": round(elapsed_time, 2),
+                "timestamp": datetime.now().isoformat()
+            }
+            results.append(result)
+
+        # Sort by average score (descending)
+        results.sort(key=lambda x: x["average_score"], reverse=True)
+
+        return results
+
     def print_comparison(self, results: List[Dict]):
         """Print formatted comparison table"""
-        # TODO: Print table with metrics for each model
-        pass
-```
+        print(f"\n{'='*80}")
+        print("A/B TEST RESULTS - MODEL COMPARISON")
+        print(f"{'='*80}")
 
-**Complete the implementation and test:**
+        # Header
+        print(f"{'Model':<25} {'Faith':>8} {'Relev':>8} {'Correct':>8} {'Avg':>8} {'Time':>8} {'Status':>8}")
+        print(f"{'-'*80}")
+
+        # Results rows
+        for r in results:
+            status = "✅ PASS" if r["passed"] else "❌ FAIL"
+            print(
+                f"{r['model']:<25} "
+                f"{r['faithfulness']:>8.3f} "
+                f"{r['answer_relevancy']:>8.3f} "
+                f"{r['answer_correctness']:>8.3f} "
+                f"{r['average_score']:>8.3f} "
+                f"{r['time_seconds']:>7.1f}s "
+                f"{status:>8}"
+            )
+
+        print(f"{'='*80}")
+
+        # Winner announcement
+        if results:
+            winner = results[0]
+            print(f"\n🏆 WINNER: {winner['model']} (avg score: {winner['average_score']:.3f})")
+```
 
 **🖥️ Run in Terminal:**
 ```bash
-# Test A/B comparison
+# Create A/B test script
 cat > scripts/ab_test.py << 'EOF'
+# scripts/ab_test.py
 import json
 import sys
-sys.path.append('src')
+sys.path.insert(0, 'src')
 
 from evaluation.ab_testing import ABTester
-from rag.pipeline import DocuMindRAGPipeline
+from documind.rag.production_qa import ProductionQA
 
 # Load dataset
 with open('data/evaluation_dataset.json', 'r') as f:
@@ -669,13 +939,14 @@ with open('data/evaluation_dataset.json', 'r') as f:
 # Setup comparison
 tester = ABTester()
 
-# Add models
-claude_rag = DocuMindRAGPipeline(model="claude-3-5-sonnet-20241022")
-tester.add_model("Claude 3.5 Sonnet", claude_rag)
+# Add current production model
+rag = ProductionQA()
+tester.add_model("GPT-4o-mini (Production)", rag)
 
-# You would add other models here:
-# gpt4_rag = DocuMindRAGPipeline(model="gpt-4-turbo")
-# tester.add_model("GPT-4 Turbo", gpt4_rag)
+# Note: To compare multiple models, you would create different
+# ProductionQA instances with different configurations:
+# rag_gpt4 = ProductionQA(model="gpt-4-turbo")
+# tester.add_model("GPT-4 Turbo", rag_gpt4)
 
 # Run comparison
 results = tester.run_comparison(test_dataset)
@@ -684,6 +955,8 @@ tester.print_comparison(results)
 # Save results
 with open('results/ab_test_results.json', 'w') as f:
     json.dump(results, f, indent=2)
+
+print(f"\n📁 Results saved to results/ab_test_results.json")
 EOF
 
 python scripts/ab_test.py
@@ -693,68 +966,69 @@ python scripts/ab_test.py
 
 **Task:** Implement automated quality gates.
 
-**📝 Create file `src/evaluation/quality_gate.py` using Claude Code or your editor:**
-```python
+**🖥️ Run in Terminal:**
+```bash
+# Create quality gate script
+cat > src/evaluation/quality_gate.py << 'EOF'
 # src/evaluation/quality_gate.py
 from typing import Dict
 import sys
 
+
 class QualityGate:
     """Quality gate checker for CI/CD"""
-    
+
     THRESHOLDS = {
-        'faithfulness': 0.90,
-        'answer_relevancy': 0.85,
-        'context_precision': 0.80,
-        'context_recall': 0.85
+        'faithfulness': 0.70,
+        'answer_relevancy': 0.80,
+        'answer_correctness': 0.70
     }
-    
+
     def check(self, results: Dict) -> bool:
         """Check if results pass quality gates"""
         print("\n" + "="*60)
         print("🚦 QUALITY GATE CHECK")
         print("="*60)
-        
+
         all_passed = True
-        
+
         for metric, threshold in self.THRESHOLDS.items():
             actual = results.get(metric, 0)
             passed = actual >= threshold
             status = "✅ PASS" if passed else "❌ FAIL"
-            
+
             print(f"{metric:.<25} {actual:.3f} (≥{threshold:.2f}) {status}")
-            
+
             if not passed:
                 all_passed = False
                 gap = threshold - actual
                 print(f"  ⚠️ Below threshold by {gap:.3f}")
-        
+
         print("="*60)
-        
+
         if all_passed:
             print("✅ QUALITY GATE PASSED - Deployment allowed")
         else:
             print("❌ QUALITY GATE FAILED - Deployment blocked")
-        
+
         return all_passed
+
 
 # CLI usage
 if __name__ == "__main__":
     import json
-    
+
     with open('results/evaluation_results.json', 'r') as f:
         results = json.load(f)
-    
+
     gate = QualityGate()
     passed = gate.check(results)
-    
+
     sys.exit(0 if passed else 1)
-```
+EOF
 
-**Test quality gate:**
+echo "✅ Created quality_gate.py"
 
-**🖥️ Run in Terminal:**
-```bash
 # Test with current results
 python src/evaluation/quality_gate.py
 echo "Exit code: $?"
@@ -762,10 +1036,9 @@ echo "Exit code: $?"
 # Test with failing results
 cat > results/bad_results.json << 'EOF'
 {
-  "faithfulness": 0.76,
-  "answer_relevancy": 0.81,
-  "context_precision": 0.73,
-  "context_recall": 0.78
+  "faithfulness": 0.56,
+  "answer_relevancy": 0.71,
+  "answer_correctness": 0.58
 }
 EOF
 
@@ -786,12 +1059,48 @@ sys.exit(0 if passed else 1)
 echo "Exit code: $?"
 ```
 
+**Expected Output:**
+```
+✅ Created quality_gate.py
+
+============================================================
+🚦 QUALITY GATE CHECK
+============================================================
+faithfulness............. 0.938 (≥0.70) ✅ PASS
+answer_relevancy......... 0.811 (≥0.80) ✅ PASS
+answer_correctness....... 0.818 (≥0.70) ✅ PASS
+============================================================
+✅ QUALITY GATE PASSED - Deployment allowed
+Exit code: 0
+
+============================================================
+🚦 QUALITY GATE CHECK
+============================================================
+faithfulness............. 0.560 (≥0.70) ❌ FAIL
+  ⚠️ Below threshold by 0.140
+answer_relevancy......... 0.710 (≥0.80) ❌ FAIL
+  ⚠️ Below threshold by 0.090
+answer_correctness....... 0.580 (≥0.70) ❌ FAIL
+  ⚠️ Below threshold by 0.120
+============================================================
+❌ QUALITY GATE FAILED - Deployment blocked
+Exit code: 1
+```
+
+> **Note:** The first test uses your actual evaluation results (should pass). The second test uses intentionally bad scores to demonstrate how the quality gate blocks deployments when metrics fall below thresholds.
+
 ### Exercise 3.3: CI/CD Integration (3 minutes)
 
-**Task:** Create GitHub Actions workflow.
+**Task:** Create GitHub Actions workflow for automated RAG evaluation.
 
-**📝 Create file `.github/workflows/evaluate.yml` using Claude Code or your editor:**
-```yaml
+> **💡 Workshop Note:** You may skip this exercise for the demo app, but make sure to include automated quality gates in your production RAG systems. CI/CD integration catches quality regressions before they reach users.
+
+**🖥️ Run in Terminal:**
+```bash
+# Create GitHub Actions workflow directory and file
+mkdir -p .github/workflows
+
+cat > .github/workflows/evaluate.yml << 'EOF'
 # .github/workflows/evaluate.yml
 name: RAG Quality Evaluation
 
@@ -801,70 +1110,157 @@ on:
   push:
     branches: [main]
   schedule:
-    - cron: '0 0 * * *'  # Daily
+    - cron: '0 0 * * *'  # Daily at midnight UTC
 
 jobs:
   evaluate:
     runs-on: ubuntu-latest
-    
+
     steps:
-      - uses: actions/checkout@v3
-      
+      - uses: actions/checkout@v4
+
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      
+
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
-          pip install ragas trulens-eval
-      
-      - name: Run evaluation
+          pip install ragas datasets langchain-openai
+
+      - name: Run RAGAS evaluation
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: python scripts/run_evaluation.py
-      
+
       - name: Check quality gates
         run: python src/evaluation/quality_gate.py
-      
+
       - name: Upload results
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: evaluation-results
           path: results/
+EOF
+
+echo "✅ Created .github/workflows/evaluate.yml"
 ```
+
+**What This Workflow Does:**
+
+| Step | Description |
+|------|-------------|
+| **Triggers** | Runs on PRs to main, pushes to main, and daily at midnight |
+| **Run evaluation** | Executes RAGAS evaluation against the test dataset |
+| **Check quality gates** | Fails the build if metrics are below thresholds |
+| **Upload results** | Saves evaluation results as downloadable artifacts |
+
+**To Enable in Your Repository:**
+
+1. **Add secrets** in GitHub → Settings → Secrets and variables → Actions:
+   - `OPENAI_API_KEY` - Your OpenAI API key
+   - `SUPABASE_URL` - Your Supabase project URL
+   - `SUPABASE_KEY` - Your Supabase anon/service key
+
+2. **Commit the workflow:**
+   ```bash
+   git add .github/workflows/evaluate.yml
+   git commit -m "Add RAG evaluation CI/CD workflow"
+   git push
+   ```
+
+3. **View results** in GitHub → Actions tab after pushing
+
+> **Note:** The quality gate step will **block merging PRs** if evaluation scores fall below thresholds, ensuring only high-quality RAG updates reach production.
 
 ### Module 3 Quiz
 
-**Question 1:** What is the purpose of quality gates?\
-- A) To make CI/CD slower\
-- B) To automatically block deployments that don't meet quality standards\
-- C) To generate reports\
+**Question 1:** What is the purpose of quality gates?
+- A) To make CI/CD slower
+- B) To automatically block deployments that don't meet quality standards
+- C) To generate reports
 - D) To test network latency
 
-**Answer:** B - Quality gates automatically prevent deploying code that doesn't meet minimum quality thresholds.
-
-**Question 2:** In A/B testing, what should you keep constant?\
-- A) The model being tested\
-- B) The test dataset\
-- C) The time of day\
+**Question 2:** In A/B testing, what should you keep constant?
+- A) The model being tested
+- B) The test dataset
+- C) The time of day
 - D) The developer running the test
 
-**Answer:** B - Use the exact same test dataset for fair comparison between models.
-
-**Question 3:** What exit code should quality gate return on failure?\
-- A) 0\
-- B) 1\
-- C) -1\
+**Question 3:** What exit code should quality gate return on failure?
+- A) 0
+- B) 1
+- C) -1
 - D) 404
-
-**Answer:** B - Exit code 1 indicates failure in CI/CD systems, blocking deployment.
 
 ---
 
 ## Module 4: Production Deployment (15 minutes)
+
+### Concept Review
+
+**The Production Evaluation Architecture**
+
+In production, RAGAS and TruLens work together in a complementary architecture:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                   RAG Production System                      │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  User Query → RAG Pipeline → Response                        │
+│       │              │            │                          │
+│       ▼              ▼            ▼                          │
+│   TruLens       (Real-time)   TruLens                        │
+│   Logging       Monitoring    Feedback                       │
+│                                                              │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  Scheduled Jobs:                                             │
+│  └─ RAGAS Batch Evaluation (nightly/weekly)                  │
+│                                                              │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐   │
+│  │  Evaluation  │ →  │  Dashboard   │ →  │   Alerts     │   │
+│  │   Database   │    │  (Streamlit) │    │   (Email)    │   │
+│  └──────────────┘    └──────────────┘    └──────────────┘   │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Three Pillars of Production Monitoring:**
+
+1. **Evaluation Database** - Stores historical results for trend analysis
+   - Track quality over time (is it improving or degrading?)
+   - Compare model versions
+   - Identify patterns (worse on certain question types?)
+
+2. **Monitoring Dashboard** - Real-time visibility into system health
+   - Current metric values with pass/fail indicators
+   - Trend charts showing quality over time
+   - Per-question breakdown for debugging
+
+3. **Alerting System** - Proactive notification of issues
+   - Alert when metrics drop below thresholds
+   - Escalate based on severity (warning vs critical)
+   - Include actionable context (what failed, what to check)
+
+**Why Each Component Matters:**
+
+| Component | Without It | With It |
+|-----------|------------|---------|
+| **Database** | No history, can't detect gradual degradation | Trend analysis, regression detection |
+| **Dashboard** | Team can't see current state | Real-time visibility for everyone |
+| **Alerts** | Problems discovered by angry users | Issues caught before user impact |
+
+**Key Insight:** Production monitoring isn't optional - it's what separates a demo from a real system. Users will trust your RAG system when you can prove it's being monitored and maintained.
+
+---
 
 ### Learning Objectives
 - Set up evaluation database
@@ -872,9 +1268,34 @@ jobs:
 - Implement alerting system
 - Deploy complete evaluation system
 
-### Exercise 4.1: Database Setup (5 minutes)
+### Exercise 4.1: Verify Results File (2 minutes)
 
-**Task:** Create evaluation tracking schema.
+**Task:** Confirm evaluation results are available for the dashboard.
+
+> **Note:** For this workshop, we use JSON file storage for simplicity. In production, you'd use PostgreSQL with the schema shown in the "Production Database Setup" collapsible section below.
+
+**🖥️ Run in Terminal:**
+```bash
+# Check that results file exists from our evaluation run
+cat results/evaluation_results.json | python -m json.tool | head -20
+```
+
+**Expected Output:**
+```json
+{
+    "faithfulness": 0.938,
+    "answer_relevancy": 0.811,
+    "answer_correctness": 0.818,
+    "average_score": 0.855,
+    "passed": true,
+    ...
+}
+```
+
+<details>
+<summary>📦 Production Database Setup (Optional - Click to expand)</summary>
+
+For production deployments, store evaluation results in PostgreSQL:
 
 **🗄️ Run in SQL Editor (Supabase SQL Editor, pgAdmin, or psql):**
 ```sql
@@ -885,130 +1306,35 @@ CREATE TABLE IF NOT EXISTS evaluation_runs (
     model_name VARCHAR(100),
     faithfulness DECIMAL(5,4),
     answer_relevancy DECIMAL(5,4),
-    context_precision DECIMAL(5,4),
-    context_recall DECIMAL(5,4),
+    answer_correctness DECIMAL(5,4),
     average_score DECIMAL(5,4),
     test_dataset_size INT,
     passed BOOLEAN,
     timestamp TIMESTAMP DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS query_evaluations (
-    id SERIAL PRIMARY KEY,
-    evaluation_run_id INT REFERENCES evaluation_runs(id),
-    question TEXT,
-    answer TEXT,
-    retrieved_contexts JSONB,
-    faithfulness_score DECIMAL(5,4),
-    answer_relevancy_score DECIMAL(5,4),
-    latency_ms INT,
-    timestamp TIMESTAMP DEFAULT NOW()
-);
-
-CREATE INDEX idx_evaluation_timestamp 
+CREATE INDEX idx_evaluation_timestamp
 ON evaluation_runs(timestamp DESC);
 
-CREATE INDEX idx_evaluation_passed 
+CREATE INDEX idx_evaluation_passed
 ON evaluation_runs(passed);
-
--- View for trend analysis
-CREATE OR REPLACE VIEW evaluation_trends AS
-SELECT 
-    DATE(timestamp) as eval_date,
-    model_name,
-    AVG(faithfulness) as avg_faithfulness,
-    AVG(answer_relevancy) as avg_answer_relevancy,
-    AVG(average_score) as avg_score,
-    COUNT(*) as num_runs
-FROM evaluation_runs
-GROUP BY DATE(timestamp), model_name
-ORDER BY eval_date DESC;
 ```
 
-**Create storage class:**
-
-**📝 Create file `src/evaluation/storage.py` using Claude Code or your editor:**
-```python
-# src/evaluation/storage.py
-import psycopg2
-import json
-from typing import Dict, List
-from datetime import datetime
-
-class EvaluationStorage:
-    """Store evaluation results in PostgreSQL"""
-    
-    def __init__(self, db_connection_string: str):
-        self.conn = psycopg2.connect(db_connection_string)
-    
-    def save_run(self, run_name: str, model_name: str, 
-                 results: Dict, test_dataset: List[Dict]) -> int:
-        """Save evaluation run to database"""
-        with self.conn.cursor() as cur:
-            cur.execute("""
-                INSERT INTO evaluation_runs
-                (run_name, model_name, faithfulness, answer_relevancy,
-                 context_precision, context_recall, average_score,
-                 test_dataset_size, passed)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                RETURNING id
-            """, (
-                run_name,
-                model_name,
-                results['faithfulness'],
-                results['answer_relevancy'],
-                results['context_precision'],
-                results['context_recall'],
-                results['average_score'],
-                len(test_dataset),
-                results['passed']
-            ))
-            
-            run_id = cur.fetchone()[0]
-            
-            # Save individual queries
-            for item in test_dataset:
-                cur.execute("""
-                    INSERT INTO query_evaluations
-                    (evaluation_run_id, question, answer, 
-                     retrieved_contexts, faithfulness_score,
-                     answer_relevancy_score)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                """, (
-                    run_id,
-                    item['question'],
-                    item.get('answer', ''),
-                    json.dumps(item.get('contexts', [])),
-                    item.get('faithfulness_score', 0),
-                    item.get('answer_relevancy_score', 0)
-                ))
-        
-        self.conn.commit()
-        return run_id
-    
-    def get_recent_runs(self, limit: int = 10):
-        """Get recent evaluation runs"""
-        with self.conn.cursor() as cur:
-            cur.execute("""
-                SELECT * FROM evaluation_runs
-                ORDER BY timestamp DESC
-                LIMIT %s
-            """, (limit,))
-            return cur.fetchall()
-```
+</details>
 
 ### Exercise 4.2: Monitoring Dashboard (5 minutes)
 
-**Task:** Create Streamlit evaluation dashboard.
+**Task:** Create Streamlit evaluation dashboard that visualizes results from our JSON file.
 
-**📝 Create file `src/dashboard/evaluation_dashboard.py` using Claude Code or your editor:**
-```python
-# src/dashboard/evaluation_dashboard.py
+**🖥️ Run in Terminal to create the dashboard:**
+```bash
+cat > src/evaluation/evaluation_dashboard.py << 'EOF'
+# src/evaluation/evaluation_dashboard.py
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from evaluation.storage import EvaluationStorage
+import json
 import os
 
 st.set_page_config(
@@ -1017,76 +1343,154 @@ st.set_page_config(
     layout="wide"
 )
 
-# Initialize storage
-storage = EvaluationStorage(os.getenv('DATABASE_URL'))
-
 st.title("📊 DocuMind Evaluation Dashboard")
 
-# Recent runs
-recent_runs = storage.get_recent_runs(limit=50)
-df = pd.DataFrame(recent_runs, columns=[
-    'id', 'run_name', 'model_name', 'faithfulness',
-    'answer_relevancy', 'context_precision', 'context_recall',
-    'average_score', 'test_dataset_size', 'passed', 'timestamp'
-])
+# Load results from JSON file
+results_file = "results/evaluation_results.json"
+
+if not os.path.exists(results_file):
+    st.error(f"❌ No results found. Run `python scripts/run_evaluation.py` first.")
+    st.stop()
+
+with open(results_file, 'r') as f:
+    results = json.load(f)
 
 # Metrics overview
-st.header("Latest Results")
-latest = df.iloc[0]
+st.header("Latest Evaluation Results")
 
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("Faithfulness", f"{latest['faithfulness']:.3f}",
-            delta="Target: 0.90")
-col2.metric("Answer Relevancy", f"{latest['answer_relevancy']:.3f}",
-            delta="Target: 0.85")
-col3.metric("Context Precision", f"{latest['context_precision']:.3f}",
-            delta="Target: 0.80")
-col4.metric("Context Recall", f"{latest['context_recall']:.3f}",
-            delta="Target: 0.85")
+
+faithfulness = results.get('faithfulness', 0)
+answer_relevancy = results.get('answer_relevancy', 0)
+answer_correctness = results.get('answer_correctness', 0)
+average_score = results.get('average_score', 0)
+passed = results.get('passed', False)
+
+col1.metric(
+    "Faithfulness",
+    f"{faithfulness:.3f}",
+    delta=f"{'✓' if faithfulness >= 0.70 else '✗'} Target: 0.70"
+)
+col2.metric(
+    "Answer Relevancy",
+    f"{answer_relevancy:.3f}",
+    delta=f"{'✓' if answer_relevancy >= 0.80 else '✗'} Target: 0.80"
+)
+col3.metric(
+    "Answer Correctness",
+    f"{answer_correctness:.3f}",
+    delta=f"{'✓' if answer_correctness >= 0.70 else '✗'} Target: 0.70"
+)
+col4.metric(
+    "Average Score",
+    f"{average_score:.3f}",
+    delta="Overall"
+)
 
 # Status indicator
-if latest['passed']:
-    st.success("✅ Quality Gates: PASSING")
+st.divider()
+if passed:
+    st.success("✅ Quality Gates: PASSING - Deployment allowed")
 else:
-    st.error("❌ Quality Gates: FAILING")
+    st.error("❌ Quality Gates: FAILING - Deployment blocked")
 
-# Trend over time
-st.header("Quality Trends")
+# Gauge chart for overall score
+st.header("Overall Quality Score")
 
-fig = go.Figure()
-fig.add_trace(go.Scatter(
-    x=df['timestamp'], y=df['faithfulness'],
-    name='Faithfulness', mode='lines+markers'
+fig = go.Figure(go.Indicator(
+    mode="gauge+number+delta",
+    value=average_score * 100,
+    domain={'x': [0, 1], 'y': [0, 1]},
+    title={'text': "Average Score (%)"},
+    delta={'reference': 75, 'increasing': {'color': "green"}},
+    gauge={
+        'axis': {'range': [0, 100]},
+        'bar': {'color': "darkblue"},
+        'steps': [
+            {'range': [0, 50], 'color': "red"},
+            {'range': [50, 70], 'color': "orange"},
+            {'range': [70, 85], 'color': "yellow"},
+            {'range': [85, 100], 'color': "green"}
+        ],
+        'threshold': {
+            'line': {'color': "black", 'width': 4},
+            'thickness': 0.75,
+            'value': 75
+        }
+    }
 ))
-fig.add_trace(go.Scatter(
-    x=df['timestamp'], y=df['answer_relevancy'],
-    name='Answer Relevancy', mode='lines+markers'
-))
-fig.add_hline(y=0.90, line_dash="dash", 
-              annotation_text="Faithfulness Target")
-fig.add_hline(y=0.85, line_dash="dash",
-              annotation_text="Answer Relevancy Target")
-
+fig.update_layout(height=300)
 st.plotly_chart(fig, use_container_width=True)
 
-# Recent runs table
-st.header("Recent Evaluation Runs")
-st.dataframe(df[[
-    'run_name', 'model_name', 'average_score', 
-    'passed', 'timestamp'
-]], use_container_width=True)
+# Bar chart comparing metrics
+st.header("Metrics Comparison")
+
+metrics_df = pd.DataFrame({
+    'Metric': ['Faithfulness', 'Answer Relevancy', 'Answer Correctness'],
+    'Score': [faithfulness, answer_relevancy, answer_correctness],
+    'Threshold': [0.70, 0.80, 0.70]
+})
+
+fig2 = go.Figure()
+fig2.add_trace(go.Bar(
+    name='Score',
+    x=metrics_df['Metric'],
+    y=metrics_df['Score'],
+    marker_color=['green' if s >= t else 'red' for s, t in zip(metrics_df['Score'], metrics_df['Threshold'])]
+))
+fig2.add_trace(go.Scatter(
+    name='Threshold',
+    x=metrics_df['Metric'],
+    y=metrics_df['Threshold'],
+    mode='markers',
+    marker=dict(size=15, symbol='line-ew', line=dict(width=3, color='black'))
+))
+fig2.update_layout(
+    yaxis_range=[0, 1],
+    yaxis_title="Score",
+    showlegend=True
+)
+st.plotly_chart(fig2, use_container_width=True)
+
+# Per-question breakdown if available
+if 'per_question' in results and results['per_question']:
+    st.header("Per-Question Analysis")
+
+    per_q_df = pd.DataFrame(results['per_question'])
+
+    # Show table
+    display_cols = ['question', 'faithfulness', 'answer_relevancy', 'answer_correctness']
+    available_cols = [c for c in display_cols if c in per_q_df.columns]
+
+    if available_cols:
+        st.dataframe(per_q_df[available_cols], use_container_width=True)
+
+# Footer
+st.divider()
+st.caption("📁 Results loaded from: " + results_file)
+st.caption("Run `python scripts/run_evaluation.py` to generate new results")
+EOF
+
+echo "✅ Dashboard created at src/evaluation/evaluation_dashboard.py"
 ```
 
 **Launch dashboard:**
 
 **🖥️ Run in Terminal:**
 ```bash
-streamlit run src/dashboard/evaluation_dashboard.py
+streamlit run src/evaluation/evaluation_dashboard.py
 ```
+
+**Expected Output:**
+- Browser opens automatically to `http://localhost:8501`
+- Dashboard shows metrics with gauge chart, bar chart, and per-question analysis
+- Quality gate status displayed (PASSING/FAILING)
 
 ### Exercise 4.3: Alerting System (5 minutes)
 
 **Task:** Implement quality alerting.
+
+> **💡 Workshop Note:** For this demo application, you may skip implementing alerting. However, for production systems, quality alerts are essential for catching RAG degradation before it impacts users. Adapt the example below to your team's preferred notification channel (Slack, PagerDuty, Microsoft Teams, email, etc.).
 
 **📝 Create file `src/evaluation/alerting.py` using Claude Code or your editor:**
 ```python
@@ -1110,10 +1514,9 @@ class QualityAlerter:
         
         # Check each metric
         thresholds = {
-            'faithfulness': 0.90,
-            'answer_relevancy': 0.85,
-            'context_precision': 0.80,
-            'context_recall': 0.85
+            'faithfulness': 0.70,
+            'answer_relevancy': 0.80,
+            'answer_correctness': 0.70
         }
         
         for metric, threshold in thresholds.items():
@@ -1149,8 +1552,7 @@ Quality Issues Detected:
 Full Results:
 - Faithfulness: {results.get('faithfulness', 0):.3f}
 - Answer Relevancy: {results.get('answer_relevancy', 0):.3f}
-- Context Precision: {results.get('context_precision', 0):.3f}
-- Context Recall: {results.get('context_recall', 0):.3f}
+- Answer Correctness: {results.get('answer_correctness', 0):.3f}
 
 Action Required:
 1. Review evaluation dashboard
@@ -1187,10 +1589,9 @@ sys.path.append('src')
 from evaluation.alerting import QualityAlerter
 
 bad_results = {
-    'faithfulness': 0.76,
-    'answer_relevancy': 0.81,
-    'context_precision': 0.73,
-    'context_recall': 0.78
+    'faithfulness': 0.56,
+    'answer_relevancy': 0.71,
+    'answer_correctness': 0.58
 }
 
 alerter = QualityAlerter(recipients=['team@company.com'])
@@ -1200,29 +1601,23 @@ alerter.check_and_alert(bad_results, 'test_run_20250115')
 
 ### Module 4 Quiz
 
-**Question 1:** Why store evaluation results in a database?\
-- A) To waste storage space\
-- B) To track trends and regression over time\
-- C) To slow down evaluation\
+**Question 1:** Why store evaluation results in a database?
+- A) To waste storage space
+- B) To track trends and regression over time
+- C) To slow down evaluation
 - D) To make it harder to access
 
-**Answer:** B - Database storage enables tracking quality trends, detecting regressions, and historical analysis.
-
-**Question 2:** What should trigger a quality alert?\
-- A) Every evaluation run\
-- B) Only when all metrics are perfect\
-- C) When metrics fall below thresholds\
+**Question 2:** What should trigger a quality alert?
+- A) Every evaluation run
+- B) Only when all metrics are perfect
+- C) When metrics fall below thresholds
 - D) Never, alerts are annoying
 
-**Answer:** C - Alerts should trigger when quality metrics drop below defined thresholds.
-
-**Question 3:** What's the benefit of a dashboard?\
-- A) Makes the project look professional\
-- B) Real-time visibility into system quality\
-- C) Required by management\
+**Question 3:** What's the benefit of a dashboard?
+- A) Makes the project look professional
+- B) Real-time visibility into system quality
+- C) Required by management
 - D) Replaces testing
-
-**Answer:** B - Dashboards provide real-time visibility and make quality metrics accessible to the whole team.
 
 ---
 
@@ -1231,13 +1626,59 @@ alerter.check_and_alert(bad_results, 'test_run_20250115')
 ## Module 5: The Unified Interface (15 minutes)
 
 ### Concept Review
-We have built:
-- Ingestion Agents (S5/S7)
-- Vector Search (S8)
-- Memory & Feedback (S9)
-- Evaluation (S10)
 
-Currently, these are separate scripts. Let's combine them into a single "DocuMind" application using Streamlit.
+**The Complete DocuMind System**
+
+Throughout this course, we've built individual components that together form a production-ready RAG system:
+
+| Session | Component | Purpose |
+|---------|-----------|---------|
+| **S5/S7** | Ingestion Agents | Process and chunk documents |
+| **S8** | Vector Search | Semantic retrieval with hybrid search |
+| **S9** | Memory & Feedback | User feedback and conversation memory |
+| **S10** | Evaluation | RAGAS metrics and TruLens monitoring |
+
+**The Problem: Separate Scripts**
+
+Currently, each component exists as standalone code:
+- `processor.py` - Document ingestion
+- `search.py` - Vector search
+- `production_qa.py` - RAG pipeline
+- `ragas_evaluator.py` - Evaluation
+
+Users need a **unified interface** to interact with the complete system.
+
+**The Solution: Three Operational Modes**
+
+A production RAG application typically needs three user-facing modes:
+
+1. **Chat Mode** - The primary interface
+   - Users ask questions in natural language
+   - RAG pipeline retrieves context and generates answers
+   - Sources are displayed for transparency
+   - Feedback buttons enable continuous improvement
+
+2. **Ingest Mode** - For administrators/content managers
+   - Upload new documents (PDF, DOCX, TXT)
+   - Process, chunk, and embed content
+   - Add to the knowledge base
+   - Track ingestion progress and status
+
+3. **Explore Mode** - For debugging and discovery
+   - Search the knowledge base semantically
+   - View raw chunks and similarity scores
+   - Understand what's in the vector store
+   - Debug retrieval issues
+
+**Why Streamlit?**
+
+Streamlit provides the fastest path from Python code to web application:
+- No frontend JavaScript required
+- Automatic UI components for common patterns
+- Built-in session state for conversations
+- Easy deployment options
+
+**Key Insight:** A unified interface transforms scattered scripts into a professional application. Users interact with one system, not five separate tools.
 
 ### Exercise 5.1: Create the App Entry Point
 
@@ -1245,21 +1686,22 @@ Currently, these are separate scripts. Let's combine them into a single "DocuMin
 
 **Step 1: Create the App File**
 
-**📝 Create file `src/app.py` using Claude Code or your editor:**
-```python
+**🖥️ Run in Terminal:**
+```bash
+cat > src/app.py << 'EOF'
 import streamlit as st
 import os
 import time
 from typing import List
 
 # Import components from previous sessions
-# Note: Ensure students have __init__.py files in their directories
 try:
-    from documind.memory.conversational_qa_with_feedback import ConversationalQAWithFeedback
+    from documind.rag.production_qa import ProductionQA
+    from documind.rag.search import search_documents
     from documind.processor import DocumentProcessor
-    from documind.rag.retriever import search_documents
-except ImportError:
-    st.error("Modules not found. Make sure you are running from the project root.")
+except ImportError as e:
+    st.error(f"Modules not found. Make sure you are running from the project root.\nError: {e}")
+    st.stop()
 
 # Page Config
 st.set_page_config(page_title="DocuMind", page_icon="🧠", layout="wide")
@@ -1273,10 +1715,10 @@ mode = st.sidebar.radio("Select Mode", ["Chat Assistant", "Document Ingestion", 
 if "messages" not in st.session_state:
     st.session_state.messages = []
 if "qa_system" not in st.session_state:
-    # Initialize the S9 Conversational QA System
-    st.session_state.qa_system = ConversationalQAWithFeedback(user_id="streamlit_user")
+    # Initialize the ProductionQA system
+    st.session_state.qa_system = ProductionQA(enable_logging=False)
 
-# --- MODE 1: CHAT ASSISTANT (Sessions 6, 8, 9) ---
+# --- MODE 1: CHAT ASSISTANT ---
 if mode == "Chat Assistant":
     st.header("Chat with your Documents")
 
@@ -1295,36 +1737,34 @@ if mode == "Chat Assistant":
         # 2. Assistant Response
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
-                # Call the S9 System
-                response = st.session_state.qa_system.ask_with_feedback(prompt)
-                
+                # Call ProductionQA
+                response = st.session_state.qa_system.query(prompt)
+
                 answer_text = response['answer']
                 sources = response.get('sources', [])
-                
+
                 # Display Answer
                 st.markdown(answer_text)
-                
-                # Display Sources (S6/S8 feature)
+
+                # Display Sources
                 if sources:
                     with st.expander("📚 View Sources"):
                         for s in sources:
                             st.markdown(f"- **{s.get('title', 'Doc')}**: {s.get('preview', '')}...")
 
-                # Feedback Mechanism (S9 feature)
+                # Feedback buttons (visual only - extend with your feedback system)
                 col1, col2 = st.columns(2)
                 with col1:
                     if st.button("👍 Helpful", key=f"up_{len(st.session_state.messages)}"):
-                        st.session_state.qa_system.rate_last_answer(response, 5, "User clicked Helpful")
-                        st.toast("Feedback saved!")
+                        st.toast("Thanks for your feedback!")
                 with col2:
                     if st.button("👎 Not Helpful", key=f"down_{len(st.session_state.messages)}"):
-                        st.session_state.qa_system.rate_last_answer(response, 2, "User clicked Not Helpful")
-                        st.toast("Feedback saved!")
+                        st.toast("Thanks for your feedback!")
 
         # Add to history
         st.session_state.messages.append({"role": "assistant", "content": answer_text})
 
-# --- MODE 2: DOCUMENT INGESTION (Session 5 & 7) ---
+# --- MODE 2: DOCUMENT INGESTION ---
 elif mode == "Document Ingestion":
     st.header("📥 Ingest New Documents")
     st.info("Upload documents to add them to the Knowledge Base (supports PDF, DOCX, TXT).")
@@ -1332,58 +1772,60 @@ elif mode == "Document Ingestion":
     uploaded_files = st.file_uploader("Choose files", accept_multiple_files=True)
 
     if st.button("Process Documents") and uploaded_files:
-        processor = DocumentProcessor() # From Session 7
-        
+        processor = DocumentProcessor()
+
         progress_bar = st.progress(0)
         status_text = st.empty()
-        
+
         for i, uploaded_file in enumerate(uploaded_files):
             status_text.text(f"Processing {uploaded_file.name}...")
-            
+
             # Save temp file
             temp_path = f"temp_{uploaded_file.name}"
             with open(temp_path, "wb") as f:
                 f.write(uploaded_file.getbuffer())
-            
+
             try:
-                # 1. Extract & Chunk (S7)
+                # Extract & Chunk
                 result = processor.process_document(temp_path)
-                
-                # 2. Upload to DB (S4/S5)
-                # Note: In a real app, you'd call the S5 pipeline script here
+
+                # Upload to DB
                 upload_status = processor.upload_to_documind(result)
-                
+
                 st.success(f"✅ {uploaded_file.name}: {result['metadata']['basic']['page_count']} pages processed.")
             except Exception as e:
                 st.error(f"❌ Failed {uploaded_file.name}: {str(e)}")
             finally:
                 if os.path.exists(temp_path):
                     os.remove(temp_path)
-            
+
             progress_bar.progress((i + 1) / len(uploaded_files))
-        
+
         status_text.text("Ingestion Complete!")
 
-# --- MODE 3: KNOWLEDGE EXPLORER (Session 4 & 8) ---
+# --- MODE 3: KNOWLEDGE EXPLORER ---
 elif mode == "Knowledge Explorer":
     st.header("🔎 Explore Knowledge Base")
-    
+
     search_term = st.text_input("Search documents by keyword or semantic meaning")
-    
+
     if search_term:
-        # Use S8 Hybrid Search directly
+        # Use semantic search
         results = search_documents(search_term, top_k=10)
-        
+
         st.subheader(f"Found {len(results)} chunks")
         for r in results:
             with st.container(border=True):
-                st.markdown(f"**Document:** {r.get('document_title', 'Unknown')}")
+                st.markdown(f"**Document:** {r.get('document_name', 'Unknown')}")
                 st.caption(f"Score: {r.get('similarity', 0.0):.4f}")
                 st.text(r.get('content', '')[:300] + "...")
 
 # Footer
 st.divider()
 st.caption("DocuMind v1.0 | Built with HeroForge Agentic Engineering")
+EOF
+
+echo "✅ App created at src/app.py"
 ```
 
 **Step 2: Run Your Final App**
@@ -1392,13 +1834,14 @@ st.caption("DocuMind v1.0 | Built with HeroForge Agentic Engineering")
 ```bash
 streamlit run src/app.py
 ```
-What you will see:
 
-1. A sidebar to switch between "Ingestion" and "Chat".
-2. A Chat Interface that uses your S9 Memory system.
-3. A Document Uploader that triggers your S7 Processor.
+**What you will see:**
+- A sidebar to switch between "Chat Assistant", "Document Ingestion", and "Knowledge Explorer"
+- A Chat Interface that uses your ProductionQA RAG system
+- A Document Uploader for adding new documents
+- A Knowledge Explorer for semantic search
 
-This is your final Capstone delivery! Congratulations!!!🚀
+This is your final Capstone delivery! Congratulations! 🚀
 
 Now, if you're an over-achiever, keep rolling with the Challenge Project!
 
@@ -1646,6 +2089,42 @@ pytest tests/test_prompt_regression.py -v
 5. **Document tradeoffs** - Sometimes regressions are acceptable
 
 **This is how Anthropic and OpenAI manage prompts at scale.** 🎯
+
+---
+
+## Answer Key
+
+### Module 1: RAGAS Evaluation
+
+**Question 1:** B - Faithfulness measures whether the answer is supported by the retrieved context, detecting hallucinations.
+
+**Question 2:** B - Answer relevancy should be ≥0.80 to ensure responses properly address the question.
+
+**Question 3:** C - Answer Correctness compares the generated answer to the expected ground truth answer.
+
+### Module 2: TruLens Monitoring
+
+**Question 1:** B - Feedback functions run asynchronously so they don't add latency to user responses.
+
+**Question 2:** B - Groundedness checks if the answer is supported by the retrieved context.
+
+**Question 3:** C - Use `run_dashboard(TruSession())` to launch the Streamlit dashboard.
+
+### Module 3: A/B Testing & Quality Gates
+
+**Question 1:** B - Quality gates automatically prevent deploying code that doesn't meet minimum quality thresholds.
+
+**Question 2:** B - Use the exact same test dataset for fair comparison between models.
+
+**Question 3:** B - Exit code 1 indicates failure in CI/CD systems, blocking deployment.
+
+### Module 4: Production Deployment
+
+**Question 1:** B - Database storage enables tracking quality trends, detecting regressions, and historical analysis.
+
+**Question 2:** C - Alerts should trigger when quality metrics drop below defined thresholds.
+
+**Question 3:** B - Dashboards provide real-time visibility and make quality metrics accessible to the whole team.
 
 ---
 

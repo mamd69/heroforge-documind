@@ -142,9 +142,16 @@ def search_documents(
             metadata.get("title") or
             "Unknown"
         )
+        # Strip YAML frontmatter from content if present
+        content = item.get("content", "")
+        if content.startswith("---"):
+            parts = content.split("---", 2)
+            if len(parts) >= 3:
+                content = parts[2].strip()
+
         results.append({
             "id": item.get("id"),
-            "content": item.get("content"),
+            "content": content,
             "metadata": metadata,
             "similarity": item.get("similarity"),
             "document_name": doc_name,
@@ -195,7 +202,7 @@ def hybrid_search(
     semantic_results = search_documents(
         query,
         top_k=top_k,
-        similarity_threshold=0.5  # Lower threshold for hybrid search
+        similarity_threshold=0.3  # Lower threshold to capture more matches
     )
 
     # Get Supabase client for keyword search

@@ -522,6 +522,7 @@ ANSWER (remember to cite sources with [Source X]):"""
                 "chunk_index": doc.get("chunk_index", 0),
                 "similarity": round(doc.get("similarity", 0), 4),
                 "link": doc.get("document_link", ""),
+                "content": content,  # Full content for evaluation
                 "preview": content[:200] + "..." if len(content) > 200 else content,
                 "was_cited": was_cited,
             })

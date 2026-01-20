@@ -40,13 +40,30 @@ class ChatService:
 
     @property
     def search(self):
-        """Lazy-load HybridSearch"""
+        """Lazy-load HybridSearcher"""
         if self._search is None:
             try:
-                from ...hybrid_search import hybrid_search
-                self._search = hybrid_search
-            except ImportError:
-                logger.warning("HybridSearch not available, using fallback")
+                from ...hybrid_search import HybridSearcher
+                self._searcher = HybridSearcher(semantic_weight=0.7)
+                logger.info("HybridSearcher initialized successfully")
+                # Create a search function wrapper for compatibility
+                def search_func(query: str, top_k: int = 5, min_score: float = 0.5):
+                    logger.info(f"Search wrapper called: query='{query[:50]}...', top_k={top_k}, min_score={min_score}")
+                    results = self._searcher.search_hybrid(query, top_k=top_k)
+                    logger.info(f"Raw search returned {len(results)} results")
+                    for i, r in enumerate(results[:3]):
+                        score = r.get('combined_score', r.get('semantic_score', 0))
+                        logger.info(f"  Result {i}: combined_score={score}")
+                    # Filter by minimum score
+                    filtered = [r for r in results if r.get('combined_score', r.get('semantic_score', 0)) >= min_score]
+                    logger.info(f"After filtering: {len(filtered)} results")
+                    return filtered
+                self._search = search_func
+            except ImportError as e:
+                logger.warning(f"HybridSearch not available: {e}, using fallback")
+                self._search = None
+            except Exception as e:
+                logger.error(f"Error initializing HybridSearch: {e}")
                 self._search = None
         return self._search
 
@@ -86,35 +103,54 @@ class ChatService:
                     search_results = self.search(
                         query=message,
                         top_k=5,
-                        min_score=0.6
+                        min_score=0.4  # Lowered to catch more semantic matches
                     )
                     context_chunks = search_results if search_results else []
                     chunks_retrieved = len(context_chunks)
+                    logger.info(f"Initial search found {chunks_retrieved} chunks")
                 except Exception as e:
                     logger.error(f"Search failed: {e}")
+            else:
+                logger.warning("No search function available")
 
             search_time = (time.time() - search_start) * 1000
 
             # Step 2: Generate answer using ProductionQA
             gen_start = time.time()
 
-            if self.qa and context_chunks:
+            if self.qa:
                 try:
+                    # ProductionQA.query() does its own search internally
+                    # Use use_hybrid=True to leverage our hybrid search
                     result = self.qa.query(
                         question=message,
-                        context=context_chunks
+                        top_k=5,
+                        use_hybrid=True,
+                        include_sources=True
                     )
 
-                    content = result.answer if hasattr(result, 'answer') else str(result)
-                    citations = self._extract_citations(context_chunks)
+                    # ProductionQA returns a dict with 'answer' and 'sources'
+                    if isinstance(result, dict):
+                        content = result.get('answer', str(result))
+                        sources = result.get('sources', [])
+                        citations = self._extract_citations(sources) if sources else []
+                        chunks_retrieved = len(sources)
+                    else:
+                        content = str(result)
+                        citations = []
 
                 except Exception as e:
                     logger.error(f"QA generation failed: {e}")
+                    # Fallback to just returning context if ProductionQA fails
                     content = self._generate_fallback_response(message, context_chunks)
-                    citations = []
+                    citations = self._extract_citations(context_chunks) if context_chunks else []
+            elif context_chunks:
+                # No QA but we have search results - show what we found
+                content = self._generate_context_response(message, context_chunks)
+                citations = self._extract_citations(context_chunks)
             else:
-                # Fallback when services aren't available
-                content = self._generate_fallback_response(message, context_chunks)
+                # Fallback when no services available
+                content = self._generate_fallback_response(message, [])
                 citations = []
 
             generation_time = (time.time() - gen_start) * 1000
@@ -142,30 +178,37 @@ class ChatService:
             raise
 
     def _extract_citations(self, chunks: List[Any]) -> List[Dict[str, Any]]:
-        """Extract citation information from chunks"""
+        """Extract citation information from chunks/sources"""
         citations = []
 
-        for chunk in chunks[:3]:  # Limit to top 3 citations
+        for chunk in chunks[:5]:  # Limit to top 5 citations
             try:
-                if hasattr(chunk, '__dict__'):
+                if isinstance(chunk, dict):
+                    # Handle search results and ProductionQA source format
+                    # Search results have: id, document_id, content, document_name, section_heading, semantic_score, metadata
+                    # ProductionQA has: id, citation_number, document, chunk_index, similarity, link, preview, was_cited
+                    document_name = chunk.get('document_name', chunk.get('document', chunk.get('title', 'Unknown Document')))
+                    preview = chunk.get('content', chunk.get('preview', chunk.get('content_preview', '')))
+
                     citation = {
-                        "document_id": getattr(chunk, 'document_id', 'unknown'),
-                        "document_title": getattr(chunk, 'document_title', 'Unknown Document'),
-                        "chunk_id": getattr(chunk, 'chunk_id', 'unknown'),
-                        "content_preview": self._truncate(
-                            getattr(chunk, 'content', '')[:200]
-                        ),
-                        "relevance_score": getattr(chunk, 'score', 0.8)
+                        "document_id": chunk.get('id', chunk.get('document_id', 'unknown')),
+                        "document_title": document_name,
+                        "chunk_id": str(chunk.get('chunk_index', chunk.get('chunk_id', 'unknown'))),
+                        "content_preview": self._truncate(preview, 200) if preview else "",
+                        "relevance_score": round(chunk.get('semantic_score', chunk.get('combined_score', chunk.get('similarity', chunk.get('score', 0.8)))), 3),
+                        "link": chunk.get('link', ''),
+                        "citation_number": chunk.get('citation_number'),
+                        "section_heading": chunk.get('section_heading')
                     }
-                elif isinstance(chunk, dict):
+                elif hasattr(chunk, '__dict__'):
                     citation = {
-                        "document_id": chunk.get('document_id', 'unknown'),
-                        "document_title": chunk.get('title', 'Unknown Document'),
-                        "chunk_id": chunk.get('chunk_id', 'unknown'),
+                        "document_id": getattr(chunk, 'id', getattr(chunk, 'document_id', 'unknown')),
+                        "document_title": getattr(chunk, 'document', getattr(chunk, 'document_title', 'Unknown Document')),
+                        "chunk_id": str(getattr(chunk, 'chunk_index', getattr(chunk, 'chunk_id', 'unknown'))),
                         "content_preview": self._truncate(
-                            chunk.get('content', '')[:200]
+                            getattr(chunk, 'preview', getattr(chunk, 'content', ''))[:200]
                         ),
-                        "relevance_score": chunk.get('score', 0.8)
+                        "relevance_score": round(getattr(chunk, 'similarity', getattr(chunk, 'score', 0.8)), 3)
                     }
                 else:
                     continue
@@ -176,6 +219,33 @@ class ChatService:
                 logger.warning(f"Error extracting citation: {e}")
 
         return citations
+
+    def _generate_context_response(
+        self,
+        message: str,
+        context: List[Any]
+    ) -> str:
+        """Generate a response from context chunks when QA is unavailable"""
+        if not context:
+            return self._generate_fallback_response(message, context)
+
+        # Build response from the first few chunks
+        response_parts = [
+            f"Based on your documents, I found {len(context)} relevant section(s) about your question:\n"
+        ]
+
+        for i, chunk in enumerate(context[:3], 1):
+            if isinstance(chunk, dict):
+                content = chunk.get('content', '')[:300]
+            elif hasattr(chunk, 'content'):
+                content = getattr(chunk, 'content', '')[:300]
+            else:
+                content = str(chunk)[:300]
+
+            if content:
+                response_parts.append(f"\n**Source {i}:**\n{content}...\n")
+
+        return "".join(response_parts)
 
     def _generate_fallback_response(
         self,
