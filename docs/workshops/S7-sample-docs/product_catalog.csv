@@ -1,0 +1,16 @@
+SKU,Product Name,Category,Description,Unit Price,Stock Quantity,Reorder Level,Supplier,Lead Time (Days),Status
+PRD-001,DocuMind Starter,Software License,"Basic document processing with 5GB storage",29.99,Unlimited,N/A,Internal,0,Active
+PRD-002,DocuMind Professional,Software License,"Advanced features with 50GB storage and API access",99.99,Unlimited,N/A,Internal,0,Active
+PRD-003,DocuMind Enterprise,Software License,"Unlimited storage, SSO, and priority support",299.99,Unlimited,N/A,Internal,0,Active
+PRD-004,API Credits - 10K,API Credits,"10,000 API calls for DocuMind integration",49.99,Unlimited,N/A,Internal,0,Active
+PRD-005,API Credits - 100K,API Credits,"100,000 API calls with volume discount",399.99,Unlimited,N/A,Internal,0,Active
+PRD-006,Implementation Package - Basic,Professional Services,"8 hours of implementation support",1200.00,Available,N/A,Internal,3,Active
+PRD-007,Implementation Package - Standard,Professional Services,"24 hours of implementation and training",3500.00,Available,N/A,Internal,5,Active
+PRD-008,Implementation Package - Premium,Professional Services,"40 hours of full implementation with customization",7000.00,Available,N/A,Internal,7,Active
+PRD-009,Training Session - Virtual,Training,"2-hour virtual training session for up to 10 users",350.00,Available,N/A,Internal,2,Active
+PRD-010,Training Session - Onsite,Training,"Full-day onsite training for up to 20 users",2500.00,Available,N/A,Internal,14,Active
+PRD-011,Premium Support - Annual,Support,"24/7 support with 1-hour response SLA",5000.00,Unlimited,N/A,Internal,0,Active
+PRD-012,Custom Integration Module,Professional Services,"Custom integration development (quoted per project)",0.00,Available,N/A,Internal,30,Quote Required
+PRD-013,Data Migration Service,Professional Services,"Full data migration from legacy systems",4500.00,Available,N/A,Internal,14,Active
+PRD-014,Security Audit Package,Professional Services,"Comprehensive security assessment and report",8500.00,Available,N/A,Internal,21,Active
+PRD-015,Compliance Package - SOC2,Professional Services,"SOC2 compliance assistance and documentation",12000.00,Available,N/A,Internal,45,Active
